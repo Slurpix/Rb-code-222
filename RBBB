@@ -1,0 +1,2842 @@
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local Remotes = ReplicatedStorage:WaitForChild("BitTenseiRemotes")
+local GetLife = Remotes:WaitForChild("GetLife")
+local DoAction = Remotes:WaitForChild("DoAction")
+local Reincarnate = Remotes:WaitForChild("Reincarnate")
+
+-- ======================
+-- НАСТРОЙКИ
+-- ======================
+
+local Settings = {
+	MusicVolume = 0.6,
+	UIVolume = 0.8,
+	UIScale = 1.0
+}
+
+local MEDIEVAL_FONT = Enum.Font.Antique
+local MEDIEVAL_FONT_RU = Enum.Font.Garamond
+
+local clickSound = Instance.new("Sound")
+clickSound.SoundId = "rbxassetid://6895079853"
+clickSound.Volume = Settings.UIVolume
+clickSound.Parent = SoundService
+
+local function playClick()
+	clickSound.Volume = Settings.UIVolume
+	clickSound:Play()
+end
+
+local showScreen
+local updateUI
+local showDeathScreen
+
+-- ======================
+-- СОЗДАНИЕ UI
+-- ======================
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DragonsMawUI"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.DisplayOrder = 20
+screenGui.Parent = playerGui
+
+local uiScale = Instance.new("UIScale")
+uiScale.Scale = Settings.UIScale
+uiScale.Parent = screenGui
+
+-- =========================================
+-- АНИМИРОВАННЫЙ ФОН
+-- =========================================
+
+local BACKGROUND_IMAGE = "rbxassetid://119230420080670"
+local SIGIL_IMAGE = "rbxassetid://118778226130224"
+local FRAME_IMAGE = "rbxassetid://134791503819700"
+
+local backgroundImage = Instance.new("ImageLabel")
+backgroundImage.Name = "IllustratedBackground"
+backgroundImage.Size = UDim2.new(1, 0, 1, 0)
+backgroundImage.Position = UDim2.new(0, 0, 0, 0)
+backgroundImage.BackgroundColor3 = Color3.fromRGB(5, 5, 8)
+backgroundImage.BackgroundTransparency = 0
+backgroundImage.BorderSizePixel = 0
+backgroundImage.Image = BACKGROUND_IMAGE
+backgroundImage.ImageColor3 = Color3.fromRGB(255, 255, 255)
+backgroundImage.ImageTransparency = 0
+backgroundImage.ScaleType = Enum.ScaleType.Crop
+backgroundImage.ZIndex = 0
+backgroundImage.Parent = screenGui
+
+local bgFrame = Instance.new("Frame")
+bgFrame.Name = "AnimatedBackground"
+bgFrame.Size = UDim2.new(1, 0, 1, 0)
+bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+bgFrame.BackgroundTransparency = 0.72
+bgFrame.BorderSizePixel = 0
+bgFrame.ZIndex = 1
+bgFrame.Parent = screenGui
+
+local bgGradient = Instance.new("UIGradient")
+bgGradient.Rotation = 60
+bgGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(3, 4, 9)),
+	ColorSequenceKeypoint.new(0.45, Color3.fromRGB(13, 10, 17)),
+	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(34, 20, 18)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(65, 35, 20))
+})
+bgGradient.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.58),
+	NumberSequenceKeypoint.new(0.5, 0.72),
+	NumberSequenceKeypoint.new(1, 0.55)
+})
+bgGradient.Parent = bgFrame
+
+local gradientTime = 0
+RunService.RenderStepped:Connect(function(dt)
+	gradientTime += dt * 0.25
+	local offset = (math.sin(gradientTime) + 1) / 2
+	bgGradient.Offset = Vector2.new(0, offset * 0.6 - 0.3)
+end)
+
+-- =========================================
+-- ОБЩИЕ ПОМОЩНИКИ
+-- =========================================
+
+local MC = {
+	Panel = Color3.fromRGB(24, 15, 9),
+	PanelStroke = Color3.fromRGB(96, 64, 30),
+	Gold = Color3.fromRGB(255, 192, 72),
+	GoldDeep = Color3.fromRGB(196, 140, 48),
+	Cream = Color3.fromRGB(255, 240, 215),
+	Muted = Color3.fromRGB(196, 172, 140),
+	DimText = Color3.fromRGB(150, 128, 100),
+	DarkTop = Color3.fromRGB(52, 34, 20),
+	DarkBottom = Color3.fromRGB(28, 18, 11),
+	DarkStroke = Color3.fromRGB(86, 58, 32),
+	HotTop = Color3.fromRGB(150, 78, 16),
+	HotBottom = Color3.fromRGB(62, 35, 12),
+	HotStroke = Color3.fromRGB(214, 154, 58),
+}
+
+local function bindFit(root, scaleObj, w, h, maxScale)
+	local function update()
+		local size = screenGui.AbsoluteSize
+		if size.X <= 0 or size.Y <= 0 then return end
+		local userScale = uiScale.Scale
+		local total = math.clamp(math.min(size.X / (w + 40), (size.Y - 64) / (h + 20)), 0.4, maxScale)
+		scaleObj.Scale = total
+		root.Position = UDim2.new(0.5, 0, 0, (64 + (size.Y - 64) / 2) / userScale)
+	end
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(update)
+	uiScale:GetPropertyChangedSignal("Scale"):Connect(update)
+	update()
+end
+
+local function addCorners(panel, w, h)
+	local function line(x, y, lw, lh)
+		local f = Instance.new("Frame")
+		f.Position = UDim2.new(0, x, 0, y)
+		f.Size = UDim2.new(0, lw, 0, lh)
+		f.BackgroundColor3 = MC.Gold
+		f.BorderSizePixel = 0
+		f.ZIndex = 3
+		f.Parent = panel
+	end
+	local function diamond(x, y)
+		local f = Instance.new("Frame")
+		f.Position = UDim2.new(0, x, 0, y)
+		f.Size = UDim2.new(0, 8, 0, 8)
+		f.BackgroundColor3 = MC.Gold
+		f.BorderSizePixel = 0
+		f.Rotation = 45
+		f.ZIndex = 3
+		f.Parent = panel
+	end
+	local inset, len, thick = 8, 32, 2
+	for _, sx in ipairs({0, 1}) do
+		for _, sy in ipairs({0, 1}) do
+			line(sx == 0 and inset or (w - inset - len), sy == 0 and inset or (h - inset - thick), len, thick)
+			line(sx == 0 and inset or (w - inset - thick), sy == 0 and inset or (h - inset - len), thick, len)
+			diamond(sx == 0 and 14 or (w - 22), sy == 0 and 14 or (h - 22))
+		end
+	end
+end
+
+local function createHotButton(parent, x, y, w, h, startPrimary)
+	local btn = Instance.new("TextButton")
+	btn.Position = UDim2.new(0, x, 0, y)
+	btn.Size = UDim2.new(0, w, 0, h)
+	btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	btn.BorderSizePixel = 0
+	btn.Text = ""
+	btn.AutoButtonColor = false
+	btn.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = btn
+
+	local base = Instance.new("UIGradient")
+	base.Rotation = 90
+	base.Color = ColorSequence.new(MC.DarkTop, MC.DarkBottom)
+	base.Parent = btn
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Thickness = 1.5
+	stroke.Color = MC.DarkStroke
+	stroke.Parent = btn
+
+	local hot = Instance.new("Frame")
+	hot.Size = UDim2.new(1, 0, 1, 0)
+	hot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	hot.BackgroundTransparency = 1
+	hot.BorderSizePixel = 0
+	hot.ZIndex = 1
+	hot.Parent = btn
+	local hotCorner = Instance.new("UICorner")
+	hotCorner.CornerRadius = UDim.new(0, 8)
+	hotCorner.Parent = hot
+	local hotGradient = Instance.new("UIGradient")
+	hotGradient.Rotation = 90
+	hotGradient.Color = ColorSequence.new(MC.HotTop, MC.HotBottom)
+	hotGradient.Parent = hot
+
+	local pressScale = Instance.new("UIScale")
+	pressScale.Parent = btn
+
+	local state = {primary = startPrimary == true, hover = false}
+	local function apply()
+		local active = state.primary or state.hover
+		TweenService:Create(hot, TweenInfo.new(0.15), {BackgroundTransparency = active and 0 or 1}):Play()
+		TweenService:Create(stroke, TweenInfo.new(0.15), {Color = active and MC.HotStroke or MC.DarkStroke}):Play()
+	end
+
+	btn.MouseEnter:Connect(function()
+		state.hover = true
+		apply()
+	end)
+	btn.MouseLeave:Connect(function()
+		state.hover = false
+		apply()
+		TweenService:Create(pressScale, TweenInfo.new(0.1), {Scale = 1}):Play()
+	end)
+	btn.MouseButton1Down:Connect(function()
+		TweenService:Create(pressScale, TweenInfo.new(0.08), {Scale = 0.985}):Play()
+	end)
+	btn.MouseButton1Up:Connect(function()
+		TweenService:Create(pressScale, TweenInfo.new(0.1), {Scale = 1}):Play()
+	end)
+	apply()
+
+	return btn, function(primary)
+		state.primary = primary
+		apply()
+	end
+end
+
+local function menuLabel(parent, text, x, y, w, h, size, color, font, align)
+	local label = Instance.new("TextLabel")
+	label.Position = UDim2.new(0, x, 0, y)
+	label.Size = UDim2.new(0, w, 0, h)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = color or MC.Cream
+	label.Font = font or Enum.Font.Gotham
+	label.TextSize = size or 16
+	label.TextXAlignment = align or Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.TextWrapped = true
+	label.ZIndex = 2
+	label.Parent = parent
+	return label
+end
+
+local function drawIcon(parent, kind, color, bg, z)
+	local box = Instance.new("Frame")
+	box.BackgroundTransparency = 1
+	box.BorderSizePixel = 0
+	box.ZIndex = z
+	box.Parent = parent
+
+	local function part(x, y, w, h, col, round, rot)
+		local f = Instance.new("Frame")
+		f.Position = UDim2.new(x, 0, y, 0)
+		f.Size = UDim2.new(w, 0, h, 0)
+		f.BackgroundColor3 = col
+		f.BorderSizePixel = 0
+		f.ZIndex = z
+		f.Rotation = rot or 0
+		f.Parent = box
+		if round and round > 0 then
+			local c = Instance.new("UICorner")
+			c.CornerRadius = UDim.new(round, 0)
+			c.Parent = f
+		end
+		return f
+	end
+
+	local function person(ox, oy, k)
+		part(ox + 0.33 * k, oy + 0.06 * k, 0.34 * k, 0.34 * k, color, 0.5)
+		part(ox + 0.15 * k, oy + 0.46 * k, 0.70 * k, 0.46 * k, color, 0.45)
+	end
+
+	if kind == "person" then
+		person(0, 0, 1)
+	elseif kind == "people" then
+		person(0.30, 0.02, 0.7)
+		person(-0.05, 0.22, 0.85)
+	elseif kind == "scroll" then
+		part(0.2, 0.1, 0.6, 0.8, color, 0.12)
+		part(0.32, 0.26, 0.36, 0.07, bg, 0.5)
+		part(0.32, 0.44, 0.36, 0.07, bg, 0.5)
+		part(0.32, 0.62, 0.24, 0.07, bg, 0.5)
+	elseif kind == "bubble" then
+		part(0.08, 0.12, 0.84, 0.58, color, 0.25)
+		part(0.2, 0.56, 0.22, 0.22, color, 0, 45)
+		part(0.24, 0.36, 0.1, 0.1, bg, 0.5)
+		part(0.45, 0.36, 0.1, 0.1, bg, 0.5)
+		part(0.66, 0.36, 0.1, 0.1, bg, 0.5)
+	elseif kind == "heart" then
+		part(0.1, 0.14, 0.42, 0.42, color, 0.5)
+		part(0.48, 0.14, 0.42, 0.42, color, 0.5)
+		part(0.24, 0.28, 0.52, 0.52, color, 0.08, 45)
+	elseif kind == "star" then
+		part(0.2, 0.2, 0.6, 0.6, color, 0.05)
+		part(0.2, 0.2, 0.6, 0.6, color, 0.05, 45)
+		part(0.42, 0.42, 0.16, 0.16, bg, 0.5)
+	elseif kind == "pin" then
+		part(0.26, 0.06, 0.48, 0.48, color, 0.5)
+		part(0.32, 0.38, 0.36, 0.36, color, 0.06, 45)
+		part(0.4, 0.2, 0.2, 0.2, bg, 0.5)
+	elseif kind == "cup" then
+		part(0.24, 0.1, 0.52, 0.5, color, 0.3)
+		part(0.06, 0.16, 0.18, 0.26, color, 0.5)
+		part(0.76, 0.16, 0.18, 0.26, color, 0.5)
+		part(0.43, 0.56, 0.14, 0.2, color)
+		part(0.28, 0.76, 0.44, 0.14, color, 0.3)
+	elseif kind == "gear" then
+		part(0.42, 0.04, 0.16, 0.92, color, 0.2, 0)
+		part(0.42, 0.04, 0.16, 0.92, color, 0.2, 45)
+		part(0.42, 0.04, 0.16, 0.92, color, 0.2, 90)
+		part(0.42, 0.04, 0.16, 0.92, color, 0.2, 135)
+		part(0.2, 0.2, 0.6, 0.6, color, 0.5)
+		part(0.38, 0.38, 0.24, 0.24, bg, 0.5)
+	elseif kind == "disk" then
+		part(0.14, 0.14, 0.72, 0.72, color, 0.1)
+		part(0.3, 0.14, 0.4, 0.26, bg, 0.1)
+		part(0.28, 0.56, 0.44, 0.3, bg, 0.1)
+	elseif kind == "door" then
+		part(0.24, 0.08, 0.52, 0.84, color, 0.1)
+		part(0.34, 0.2, 0.32, 0.6, bg, 0.05)
+		part(0.52, 0.48, 0.09, 0.09, color, 0.5)
+	end
+	return box
+end
+
+local function createCornerButton(parent, x, text)
+	local btn = createHotButton(parent, x, 14, 52, 52, false)
+	btn.ZIndex = 5
+	local label = menuLabel(btn, text, 0, 0, 52, 52, 28, MC.Cream, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+	label.ZIndex = 6
+	return btn
+end
+
+-- =========================================
+-- 1. TITLE SCREEN
+-- =========================================
+
+local titleScreen, titleGroup, startButton
+
+do
+	titleScreen = Instance.new("Frame")
+	titleScreen.Name = "TitleScreen"
+	titleScreen.Size = UDim2.new(1, 0, 1, 0)
+	titleScreen.BackgroundTransparency = 1
+	titleScreen.ZIndex = 2
+	titleScreen.Parent = screenGui
+
+	titleGroup = Instance.new("CanvasGroup")
+	titleGroup.Name = "TitleGroup"
+	titleGroup.Size = UDim2.new(1, 0, 1, 0)
+	titleGroup.BackgroundTransparency = 1
+	titleGroup.ZIndex = 2
+	titleGroup.Parent = titleScreen
+
+	local frameArt = Instance.new("ImageLabel")
+	frameArt.Name = "GoldFiligreeFrame"
+	frameArt.Size = UDim2.new(1, 0, 1, 0)
+	frameArt.Position = UDim2.new(0, 0, 0, 0)
+	frameArt.BackgroundTransparency = 1
+	frameArt.Image = FRAME_IMAGE
+	frameArt.ImageTransparency = 0.06
+	frameArt.ScaleType = Enum.ScaleType.Stretch
+	frameArt.ZIndex = 2
+	frameArt.Parent = titleGroup
+
+	for _ = 1, 16 do
+		local ember = Instance.new("Frame")
+		local s = math.random(3, 7)
+		ember.Size = UDim2.new(0, s, 0, s)
+		ember.Rotation = 45
+		ember.BackgroundColor3 = MC.GoldDeep
+		ember.BackgroundTransparency = 1
+		ember.BorderSizePixel = 0
+		ember.Parent = titleGroup
+		task.spawn(function()
+			task.wait(math.random() * 4)
+			while screenGui.Parent do
+				if titleScreen.Visible then
+					local x = math.random()
+					local y = 0.5 + math.random() * 0.5
+					local life = 5 + math.random() * 5
+					ember.Position = UDim2.new(x, 0, y, 0)
+					ember.BackgroundTransparency = 1
+					TweenService:Create(ember, TweenInfo.new(life * 0.2), {BackgroundTransparency = 0.35}):Play()
+					TweenService:Create(ember, TweenInfo.new(life, Enum.EasingStyle.Linear), {
+						Position = UDim2.new(x + (math.random() - 0.5) * 0.1, 0, y - 0.35, 0)
+					}):Play()
+					task.wait(life * 0.7)
+					TweenService:Create(ember, TweenInfo.new(life * 0.3), {BackgroundTransparency = 1}):Play()
+					task.wait(life * 0.3)
+				else
+					task.wait(0.5)
+				end
+			end
+		end)
+	end
+
+	local titleRoot = Instance.new("Frame")
+	titleRoot.Name = "TitleRoot"
+	titleRoot.AnchorPoint = Vector2.new(0.5, 0.5)
+	titleRoot.Size = UDim2.new(0, 820, 0, 860)
+	titleRoot.BackgroundTransparency = 1
+	titleRoot.ZIndex = 3
+	titleRoot.Parent = titleGroup
+	local titleFit = Instance.new("UIScale")
+	titleFit.Parent = titleRoot
+	bindFit(titleRoot, titleFit, 820, 860, 1.2)
+
+	local titleText = Instance.new("TextLabel")
+	titleText.Size = UDim2.new(0, 820, 0, 176)
+	titleText.BackgroundTransparency = 1
+	titleText.Text = "Dragon's Maw\nAdventure"
+	titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	titleText.Font = MEDIEVAL_FONT
+	titleText.TextSize = 72
+	titleText.TextWrapped = true
+	titleText.Parent = titleRoot
+	local titleGradient = Instance.new("UIGradient")
+	titleGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 14, 8)),
+		ColorSequenceKeypoint.new(0.45, Color3.fromRGB(120, 70, 20)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 205, 90)),
+	})
+	titleGradient.Parent = titleText
+	local titleStroke = Instance.new("UIStroke")
+	titleStroke.Color = Color3.fromRGB(255, 236, 200)
+	titleStroke.Thickness = 2.5
+	titleStroke.Transparency = 0.15
+	titleStroke.Parent = titleText
+
+	local emblem = Instance.new("ImageLabel")
+	emblem.Name = "ObsidianSigil"
+	emblem.AnchorPoint = Vector2.new(0.5, 0.5)
+	emblem.Position = UDim2.new(0.5, 0, 0, 430)
+	emblem.Size = UDim2.new(0, 470, 0, 470)
+	emblem.BackgroundTransparency = 1
+	emblem.Image = SIGIL_IMAGE
+	emblem.ImageColor3 = Color3.fromRGB(255, 225, 174)
+	emblem.ImageTransparency = 0.02
+	emblem.ScaleType = Enum.ScaleType.Fit
+	emblem.ZIndex = 5
+	emblem.Parent = titleRoot
+
+	local ContentProvider = game:GetService("ContentProvider")
+	task.spawn(function()
+		local ok, err = pcall(function()
+			ContentProvider:PreloadAsync({backgroundImage, emblem, frameArt})
+		end)
+		if not ok then
+			warn("[DragonsMaw] Ошибка загрузки: " .. tostring(err))
+		else
+			print("[DragonsMaw] Background:", backgroundImage.IsLoaded,
+				"Sigil:", emblem.IsLoaded, "Frame:", frameArt.IsLoaded)
+		end
+	end)
+
+	local emblemPulse = 0
+	RunService.RenderStepped:Connect(function(dt)
+		if not titleScreen.Visible then return end
+		emblemPulse += dt * 1.25
+		emblem.ImageTransparency = 0.015 + (math.sin(emblemPulse) + 1) * 0.025
+	end)
+
+	startButton = Instance.new("TextButton")
+	startButton.Name = "StartButton"
+	startButton.AnchorPoint = Vector2.new(0.5, 0)
+	startButton.Position = UDim2.new(0, 410, 0, 700)
+	startButton.Size = UDim2.new(0, 390, 0, 88)
+	startButton.BackgroundColor3 = Color3.fromRGB(5, 7, 10)
+	startButton.BorderSizePixel = 0
+	startButton.AutoButtonColor = false
+	startButton.Text = ""
+	startButton.Parent = titleRoot
+
+	local startCorner = Instance.new("UICorner")
+	startCorner.CornerRadius = UDim.new(0, 10)
+	startCorner.Parent = startButton
+
+	local startGradient = Instance.new("UIGradient")
+	startGradient.Rotation = 90
+	startGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(19, 20, 23)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(8, 9, 12)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(3, 4, 6)),
+	})
+	startGradient.Parent = startButton
+
+	local startStroke = Instance.new("UIStroke")
+	startStroke.Color = Color3.fromRGB(142, 105, 53)
+	startStroke.Thickness = 1.5
+	startStroke.Transparency = 0.12
+	startStroke.Parent = startButton
+
+	local innerBorder = Instance.new("Frame")
+	innerBorder.Position = UDim2.new(0, 5, 0, 5)
+	innerBorder.Size = UDim2.new(1, -10, 1, -10)
+	innerBorder.BackgroundTransparency = 1
+	innerBorder.BorderSizePixel = 0
+	innerBorder.ZIndex = 2
+	innerBorder.Parent = startButton
+	local innerCorner = Instance.new("UICorner")
+	innerCorner.CornerRadius = UDim.new(0, 7)
+	innerCorner.Parent = innerBorder
+	local innerStroke = Instance.new("UIStroke")
+	innerStroke.Color = Color3.fromRGB(105, 82, 49)
+	innerStroke.Thickness = 1
+	innerStroke.Transparency = 0.48
+	innerStroke.Parent = innerBorder
+
+	local startText = Instance.new("TextLabel")
+	startText.AnchorPoint = Vector2.new(0.5, 0.5)
+	startText.Position = UDim2.new(0.5, 0, 0.5, -1)
+	startText.Size = UDim2.new(1, -70, 1, -8)
+	startText.BackgroundTransparency = 1
+	startText.Text = "НАЧАТЬ"
+	startText.TextColor3 = Color3.fromRGB(230, 211, 174)
+	startText.Font = Enum.Font.Garamond
+	startText.TextSize = 31
+	startText.TextXAlignment = Enum.TextXAlignment.Center
+	startText.ZIndex = 3
+	startText.Parent = startButton
+
+	for _, side in ipairs({-1, 1}) do
+		local ornament = Instance.new("TextLabel")
+		ornament.AnchorPoint = Vector2.new(0.5, 0.5)
+		ornament.Position = UDim2.new(0.5, side * 145, 0.5, 0)
+		ornament.Size = UDim2.new(0, 24, 0, 28)
+		ornament.BackgroundTransparency = 1
+		ornament.Text = "✧"
+		ornament.TextColor3 = Color3.fromRGB(183, 139, 72)
+		ornament.TextSize = 18
+		ornament.Font = Enum.Font.Garamond
+		ornament.ZIndex = 3
+		ornament.Parent = startButton
+	end
+
+	local startScale = Instance.new("UIScale")
+	startScale.Parent = startButton
+
+	local hoverGlow = Instance.new("Frame")
+	hoverGlow.Size = UDim2.new(1, 0, 1, 0)
+	hoverGlow.BackgroundColor3 = Color3.fromRGB(186, 139, 67)
+	hoverGlow.BackgroundTransparency = 1
+	hoverGlow.BorderSizePixel = 0
+	hoverGlow.ZIndex = 1
+	hoverGlow.Parent = startButton
+	local glowCorner = Instance.new("UICorner")
+	glowCorner.CornerRadius = UDim.new(0, 10)
+	glowCorner.Parent = hoverGlow
+
+	startButton.MouseEnter:Connect(function()
+		TweenService:Create(startScale, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1.025}):Play()
+		TweenService:Create(startStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(222, 184, 112), Transparency = 0}):Play()
+		TweenService:Create(startText, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(255, 239, 207)}):Play()
+		TweenService:Create(hoverGlow, TweenInfo.new(0.18), {BackgroundTransparency = 0.94}):Play()
+	end)
+	startButton.MouseLeave:Connect(function()
+		TweenService:Create(startScale, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Scale = 1}):Play()
+		TweenService:Create(startStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(142, 105, 53), Transparency = 0.12}):Play()
+		TweenService:Create(startText, TweenInfo.new(0.18), {TextColor3 = Color3.fromRGB(230, 211, 174)}):Play()
+		TweenService:Create(hoverGlow, TweenInfo.new(0.18), {BackgroundTransparency = 1}):Play()
+	end)
+	startButton.MouseButton1Down:Connect(function()
+		TweenService:Create(startScale, TweenInfo.new(0.08), {Scale = 0.985}):Play()
+	end)
+	startButton.MouseButton1Up:Connect(function()
+		TweenService:Create(startScale, TweenInfo.new(0.1), {Scale = 1.025}):Play()
+	end)
+
+	local hint = Instance.new("TextLabel")
+	hint.Size = UDim2.new(0, 820, 0, 34)
+	hint.Position = UDim2.new(0, 0, 0, 808)
+	hint.BackgroundTransparency = 1
+	hint.Text = "Нажми «Начать»"
+	hint.TextColor3 = Color3.fromRGB(205, 165, 95)
+	hint.Font = MEDIEVAL_FONT_RU
+	hint.TextSize = 23
+	hint.Parent = titleRoot
+end
+
+-- =========================================
+-- 2. MAIN MENU
+-- =========================================
+
+local mainMenu, menuPanel, closeMenuBtn
+local singleplayerBtn, multiplayerBtn, settingsMenuEntry
+local menuSingleDesc, menuMultiDesc
+
+do
+	mainMenu = Instance.new("Frame")
+	mainMenu.Name = "MainMenu"
+	mainMenu.Size = UDim2.new(1, 0, 1, 0)
+	mainMenu.BackgroundTransparency = 1
+	mainMenu.Visible = false
+	mainMenu.Parent = screenGui
+
+	local menuRoot = Instance.new("Frame")
+	menuRoot.AnchorPoint = Vector2.new(0.5, 0.5)
+	menuRoot.Size = UDim2.new(0, 750, 0, 750)
+	menuRoot.BackgroundTransparency = 1
+	menuRoot.Parent = mainMenu
+	local menuFit = Instance.new("UIScale")
+	menuFit.Parent = menuRoot
+	bindFit(menuRoot, menuFit, 750, 750, 1.0)
+
+	menuPanel = Instance.new("CanvasGroup")
+	menuPanel.Name = "MenuPanel"
+	menuPanel.Size = UDim2.new(0, 750, 0, 750)
+	menuPanel.BackgroundColor3 = MC.Panel
+	menuPanel.BorderSizePixel = 0
+	menuPanel.Parent = menuRoot
+	local panelCorner = Instance.new("UICorner")
+	panelCorner.CornerRadius = UDim.new(0, 14)
+	panelCorner.Parent = menuPanel
+	local panelStroke = Instance.new("UIStroke")
+	panelStroke.Color = MC.PanelStroke
+	panelStroke.Thickness = 1.5
+	panelStroke.Parent = menuPanel
+
+	addCorners(menuPanel, 750, 750)
+
+	local menuTitle = menuLabel(menuPanel, "Dragon's Maw Adventure", 0, 34, 750, 70, 52, MC.Gold, MEDIEVAL_FONT, Enum.TextXAlignment.Center)
+	menuTitle.TextWrapped = false
+	menuLabel(menuPanel, "Проживи жизнь заново", 0, 104, 750, 30, 24, MC.Muted, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+
+	closeMenuBtn = createCornerButton(menuPanel, 750 - 14 - 52, "X")
+
+	local function createMenuEntry(index, icon, titleText, descText, primary)
+		local btn = createHotButton(menuPanel, 44, 140 + (index - 1) * 105, 662, 94, primary)
+		local badge = Instance.new("Frame")
+		badge.Position = UDim2.new(0, 22, 0, 8)
+		badge.Size = UDim2.new(0, 40, 0, 40)
+		badge.BackgroundColor3 = MC.Cream
+		badge.BorderSizePixel = 0
+		badge.ZIndex = 2
+		badge.Parent = btn
+		local badgeCorner = Instance.new("UICorner")
+		badgeCorner.CornerRadius = UDim.new(0, 8)
+		badgeCorner.Parent = badge
+		local glyph = drawIcon(badge, icon, Color3.fromRGB(14, 9, 5), MC.Cream, 3)
+		glyph.Position = UDim2.new(0, 5, 0, 5)
+		glyph.Size = UDim2.new(0, 30, 0, 30)
+		menuLabel(btn, titleText, 76, 10, 560, 38, 32, MC.Cream, MEDIEVAL_FONT_RU)
+		local desc = menuLabel(btn, descText, 26, 50, 612, 40, 15, MC.Muted, Enum.Font.Gotham)
+		desc.TextYAlignment = Enum.TextYAlignment.Top
+		return btn, desc
+	end
+
+	singleplayerBtn, menuSingleDesc = createMenuEntry(1, "person", "Одиночная игра", "Создай персонажа и проживи свою жизнь.", false)
+	local multiText = "Приватный мир на до 5 друзей: растите вместе как братья и сёстры или друзья детства."
+	multiplayerBtn, menuMultiDesc = createMenuEntry(2, "people", "Мультиплеер", multiText, false)
+	menuMultiDesc:SetAttribute("Default", multiText)
+	settingsMenuEntry = createMenuEntry(3, "gear", "Настройки", "Громкость, масштаб интерфейса и другие параметры.", false)
+
+	menuLabel(menuPanel, "Версия 0.3  ·  Dragon's Maw Adventure", 0, 562, 750, 22, 14, MC.DimText, Enum.Font.Gotham, Enum.TextXAlignment.Center)
+end
+
+-- =========================================
+-- 2b. МОДАЛКИ
+-- =========================================
+
+local updateLogFrame, feedbackFrame
+
+local function createModal(titleText, subtitleText)
+	local frame = Instance.new("Frame")
+	frame.Name = "Modal"
+	frame.Size = UDim2.new(1, 0, 1, 0)
+	frame.BackgroundTransparency = 1
+	frame.Visible = false
+	frame.Parent = screenGui
+
+	local root = Instance.new("Frame")
+	root.AnchorPoint = Vector2.new(0.5, 0.5)
+	root.Size = UDim2.new(0, 750, 0, 750)
+	root.BackgroundTransparency = 1
+	root.Parent = frame
+	local fit = Instance.new("UIScale")
+	fit.Parent = root
+	bindFit(root, fit, 750, 750, 1.0)
+
+	local panel = Instance.new("Frame")
+	panel.Size = UDim2.new(0, 750, 0, 750)
+	panel.BackgroundColor3 = MC.Panel
+	panel.BorderSizePixel = 0
+	panel.Parent = root
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 14)
+	c.Parent = panel
+	local s = Instance.new("UIStroke")
+	s.Color = MC.PanelStroke
+	s.Thickness = 1.5
+	s.Parent = panel
+
+	addCorners(panel, 750, 750)
+
+	menuLabel(panel, titleText, 0, 34, 750, 70, 48, MC.Gold, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+	menuLabel(panel, subtitleText, 0, 104, 750, 30, 22, MC.Muted, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+
+	local closeBtn = createCornerButton(panel, 750 - 14 - 52, "X")
+	closeBtn.MouseButton1Click:Connect(function()
+		playClick()
+		showScreen(mainMenu)
+	end)
+
+	local content = Instance.new("Frame")
+	content.Position = UDim2.new(0, 44, 0, 150)
+	content.Size = UDim2.new(0, 662, 0, 570)
+	content.BackgroundTransparency = 1
+	content.Parent = panel
+
+	return frame, content
+end
+
+local UPDATE_LOG = {
+	{ Version = "0.3", Title = "Новый интерфейс", Notes = {
+		"Новая заставка с кнопкой «Начать» и новое главное меню.",
+		"Экран игры: вкладки, характеристики и панель персонажа.",
+	}},
+	{ Version = "0.2", Title = "Создание персонажа", Notes = {
+		"Выбор пола, расы, сценария, сложности и внешности.",
+		"Кнопка «Случайный персонаж» и переброс жизни.",
+		"Экран новорождённого.",
+	}},
+	{ Version = "0.1", Title = "Первая версия", Notes = {
+		"Годы жизни, действия и характеристики.",
+		"Смерть и реинкарнация.",
+	}},
+}
+
+do
+	local content
+	updateLogFrame, content = createModal("Список обновлений", "Что нового в игре")
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.new(1, 0, 1, 0)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.ScrollBarThickness = 5
+	scroll.ScrollBarImageColor3 = Color3.fromRGB(190, 112, 28)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.Parent = content
+
+	local list = Instance.new("UIListLayout")
+	list.Padding = UDim.new(0, 12)
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Parent = scroll
+
+	for i, entry in ipairs(UPDATE_LOG) do
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -10, 0, 0)
+		card.AutomaticSize = Enum.AutomaticSize.Y
+		card.LayoutOrder = i
+		card.BackgroundColor3 = Color3.fromRGB(36, 23, 14)
+		card.BorderSizePixel = 0
+		card.Parent = scroll
+		local cc = Instance.new("UICorner")
+		cc.CornerRadius = UDim.new(0, 8)
+		cc.Parent = card
+		local cs = Instance.new("UIStroke")
+		cs.Color = MC.DarkStroke
+		cs.Thickness = 1.5
+		cs.Parent = card
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 18)
+		pad.PaddingRight = UDim.new(0, 18)
+		pad.PaddingTop = UDim.new(0, 12)
+		pad.PaddingBottom = UDim.new(0, 14)
+		pad.Parent = card
+		local cl = Instance.new("UIListLayout")
+		cl.Padding = UDim.new(0, 6)
+		cl.SortOrder = Enum.SortOrder.LayoutOrder
+		cl.Parent = card
+
+		local head = Instance.new("TextLabel")
+		head.Size = UDim2.new(1, 0, 0, 34)
+		head.LayoutOrder = 0
+		head.BackgroundTransparency = 1
+		head.Text = "Версия " .. entry.Version .. " — " .. entry.Title
+		head.TextColor3 = MC.Gold
+		head.Font = MEDIEVAL_FONT_RU
+		head.TextSize = 28
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.Parent = card
+
+		local notes = Instance.new("TextLabel")
+		notes.Size = UDim2.new(1, 0, 0, 0)
+		notes.AutomaticSize = Enum.AutomaticSize.Y
+		notes.LayoutOrder = 1
+		notes.BackgroundTransparency = 1
+		notes.Text = "• " .. table.concat(entry.Notes, "\n• ")
+		notes.TextColor3 = MC.Cream
+		notes.Font = Enum.Font.Gotham
+		notes.TextSize = 16
+		notes.TextWrapped = true
+		notes.TextXAlignment = Enum.TextXAlignment.Left
+		notes.TextYAlignment = Enum.TextYAlignment.Top
+		notes.Parent = card
+	end
+end
+
+do
+	local content
+	feedbackFrame, content = createModal("Обратная связь", "Расскажи, что у нас не так, или что нравится")
+	local FEEDBACK_MAX = 500
+	local categories = {
+		{Id = "bug", Name = "Ошибка"},
+		{Id = "idea", Name = "Идея"},
+		{Id = "praise", Name = "Отзыв"},
+	}
+	local selectedCategory = "idea"
+	local categoryButtons = {}
+
+	menuLabel(content, "Тема", 0, 0, 200, 30, 24, MC.Cream, MEDIEVAL_FONT_RU)
+	for i, cat in ipairs(categories) do
+		local btn, setPrimary = createHotButton(content, (i - 1) * 222, 36, 206, 48, cat.Id == selectedCategory)
+		menuLabel(btn, cat.Name, 0, 0, 206, 48, 26, MC.Cream, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+		categoryButtons[cat.Id] = setPrimary
+		btn.MouseButton1Click:Connect(function()
+			playClick()
+			selectedCategory = cat.Id
+			for id, setter in pairs(categoryButtons) do
+				setter(id == selectedCategory)
+			end
+		end)
+	end
+
+	menuLabel(content, "Сообщение", 0, 104, 300, 30, 24, MC.Cream, MEDIEVAL_FONT_RU)
+
+	local input = Instance.new("TextBox")
+	input.Position = UDim2.new(0, 0, 0, 140)
+	input.Size = UDim2.new(0, 662, 0, 260)
+	input.BackgroundColor3 = Color3.fromRGB(14, 9, 5)
+	input.BorderSizePixel = 0
+	input.MultiLine = true
+	input.TextWrapped = true
+	input.ClearTextOnFocus = false
+	input.TextXAlignment = Enum.TextXAlignment.Left
+	input.TextYAlignment = Enum.TextYAlignment.Top
+	input.PlaceholderText = "Опиши, что случилось или что хочешь предложить..."
+	input.PlaceholderColor3 = MC.DimText
+	input.Text = ""
+	input.TextColor3 = MC.Cream
+	input.Font = Enum.Font.Gotham
+	input.TextSize = 17
+	input.Parent = content
+	local ic = Instance.new("UICorner")
+	ic.CornerRadius = UDim.new(0, 8)
+	ic.Parent = input
+	local is = Instance.new("UIStroke")
+	is.Color = MC.DarkStroke
+	is.Thickness = 1.5
+	is.Parent = input
+	local ip = Instance.new("UIPadding")
+	ip.PaddingLeft = UDim.new(0, 14)
+	ip.PaddingRight = UDim.new(0, 14)
+	ip.PaddingTop = UDim.new(0, 12)
+	ip.PaddingBottom = UDim.new(0, 12)
+	ip.Parent = input
+
+	local counter = menuLabel(content, "0 / " .. FEEDBACK_MAX, 462, 406, 200, 22, 15, MC.DimText, Enum.Font.Gotham, Enum.TextXAlignment.Right)
+	local status = menuLabel(content, "", 0, 406, 450, 22, 15, MC.Muted, Enum.Font.Gotham)
+
+	input:GetPropertyChangedSignal("Text"):Connect(function()
+		local len = utf8.len(input.Text)
+		if len and len > FEEDBACK_MAX then
+			local cut = utf8.offset(input.Text, FEEDBACK_MAX + 1)
+			if cut then input.Text = input.Text:sub(1, cut - 1) end
+			return
+		end
+		counter.Text = (len or 0) .. " / " .. FEEDBACK_MAX
+	end)
+
+	local sendBtn = createHotButton(content, 0, 442, 662, 64, true)
+	menuLabel(sendBtn, "Отправить", 0, 0, 662, 64, 32, MC.Cream, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+
+	local nextSendTime = 0
+	sendBtn.MouseButton1Click:Connect(function()
+		playClick()
+		local text = input.Text:gsub("^%s+", ""):gsub("%s+$", "")
+		local len = utf8.len(text) or 0
+		if len < 5 then
+			status.TextColor3 = Color3.fromRGB(255, 130, 100)
+			status.Text = "Напиши хотя бы пару слов (от 5 символов)."
+			return
+		end
+		local remote = Remotes:FindFirstChild("SendFeedback")
+		if not remote then
+			status.TextColor3 = Color3.fromRGB(255, 130, 100)
+			status.Text = "Отправка сейчас недоступна."
+			return
+		end
+		if os.clock() < nextSendTime then
+			status.TextColor3 = Color3.fromRGB(255, 130, 100)
+			status.Text = "Подожди немного перед следующей отправкой."
+			return
+		end
+		remote:FireServer(selectedCategory, text)
+		nextSendTime = os.clock() + 30
+		input.Text = ""
+		status.TextColor3 = Color3.fromRGB(130, 225, 130)
+		status.Text = "Спасибо! Сообщение отправлено."
+	end)
+end
+
+-- =========================================
+-- 3. GAME SCREEN
+-- =========================================
+
+local gameScreen, GC, fitGameScreen, selectTab
+local nameLabel, subLabel, goldHeaderLabel, difficultyLabel, ageLabel
+local healthValueLabel, healthFill, charStatLabels, charInfoLabel
+local happyValueLabel, happyFill, stressValueLabel, stressFill
+local GameHooks = {}
+
+do
+	local GAME_W, GAME_H = 1000, 600
+	local TOP_INSET = 64
+
+	GC = {
+		Panel = Color3.fromRGB(22, 13, 7),
+		Card = Color3.fromRGB(34, 20, 10),
+		Gold = Color3.fromRGB(255, 184, 55),
+		Text = Color3.fromRGB(245, 230, 200),
+		Muted = Color3.fromRGB(205, 182, 145),
+		Orange = Color3.fromRGB(200, 80, 20),
+		Green = Color3.fromRGB(110, 220, 120),
+		Red = Color3.fromRGB(235, 80, 60),
+	}
+
+	gameScreen = Instance.new("Frame")
+	gameScreen.Name = "GameScreen"
+	gameScreen.Size = UDim2.new(1, 0, 1, 0)
+	gameScreen.BackgroundTransparency = 1
+	gameScreen.Visible = false
+	gameScreen.Parent = screenGui
+
+	local gameRoot = Instance.new("Frame")
+	gameRoot.Name = "GameRoot"
+	gameRoot.AnchorPoint = Vector2.new(0.5, 0.5)
+	gameRoot.Size = UDim2.new(0, GAME_W, 0, GAME_H)
+	gameRoot.Position = UDim2.new(0.5, 0, 0.5, 0)
+	gameRoot.BackgroundTransparency = 1
+	gameRoot.Parent = gameScreen
+
+	local gameFit = Instance.new("UIScale")
+	gameFit.Parent = gameRoot
+
+	function fitGameScreen()
+		local size = screenGui.AbsoluteSize
+		if size.X <= 0 or size.Y <= 0 then return end
+		local userScale = uiScale.Scale
+		local total = math.clamp(math.min(size.X / GAME_W, (size.Y - TOP_INSET) / GAME_H), 0.4, 1.6)
+		gameFit.Scale = total
+		gameRoot.Position = UDim2.new(0.5, 0, 0, (TOP_INSET + (size.Y - TOP_INSET) / 2) / userScale)
+	end
+	screenGui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitGameScreen)
+	uiScale:GetPropertyChangedSignal("Scale"):Connect(fitGameScreen)
+	fitGameScreen()
+
+	local function makePanel(parent, x, y, w, h)
+		local panel = Instance.new("Frame")
+		panel.Position = UDim2.new(0, x, 0, y)
+		panel.Size = UDim2.new(0, w, 0, h)
+		panel.BackgroundColor3 = GC.Panel
+		panel.BorderSizePixel = 0
+		panel.Parent = parent
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 10)
+		c.Parent = panel
+		local s = Instance.new("UIStroke")
+		s.Color = GC.Orange
+		s.Thickness = 2
+		s.Transparency = 0.25
+		s.Parent = panel
+		return panel
+	end
+
+	local function makeText(parent, text, x, y, w, h, size, color, font, align)
+		local label = Instance.new("TextLabel")
+		label.Position = UDim2.new(0, x, 0, y)
+		label.Size = UDim2.new(0, w, 0, h)
+		label.BackgroundTransparency = 1
+		label.Text = text
+		label.TextColor3 = color or GC.Text
+		label.Font = font or Enum.Font.Gotham
+		label.TextSize = size or 16
+		label.TextXAlignment = align or Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Center
+		label.TextTruncate = Enum.TextTruncate.AtEnd
+		label.Parent = parent
+		return label
+	end
+
+	local headerPanel = makePanel(gameRoot, 0, 0, GAME_W, 64)
+	nameLabel = makeText(headerPanel, "Персонаж", 16, 6, 600, 34, 30, GC.Gold, MEDIEVAL_FONT_RU)
+	subLabel = makeText(headerPanel, "", 16, 38, 600, 20, 16, GC.Muted)
+	goldHeaderLabel = makeText(headerPanel, "Золото: 20", GAME_W - 316, 8, 300, 26, 20, GC.Gold, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
+	difficultyLabel = makeText(headerPanel, "", GAME_W - 316, 36, 300, 20, 16, GC.Muted, Enum.Font.Gotham, Enum.TextXAlignment.Right)
+
+	local agePanel = makePanel(gameRoot, 0, 70, GAME_W, 40)
+	ageLabel = makeText(agePanel, "ВОЗРАСТ 0", 16, 4, 200, 32, 26, GC.Gold, MEDIEVAL_FONT_RU)
+	makeText(agePanel, "Каждое действие занимает один год жизни. Выбери, чем заняться.", 220, 4, GAME_W - 220 - 160, 32, 16, GC.Muted)
+
+	local quickMenuBtn = Instance.new("TextButton")
+	quickMenuBtn.Name = "QuickMenu"
+	quickMenuBtn.Position = UDim2.new(0, GAME_W - 146, 0, 5)
+	quickMenuBtn.Size = UDim2.new(0, 134, 0, 30)
+	quickMenuBtn.BackgroundColor3 = Color3.fromRGB(245, 215, 160)
+	quickMenuBtn.Text = "← В меню"
+	quickMenuBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+	quickMenuBtn.Font = MEDIEVAL_FONT_RU
+	quickMenuBtn.TextSize = 20
+	quickMenuBtn.AutoButtonColor = false
+	quickMenuBtn.Parent = agePanel
+	Instance.new("UICorner", quickMenuBtn).CornerRadius = UDim.new(0, 8)
+	local quickStroke = Instance.new("UIStroke")
+	quickStroke.Color = Color3.fromRGB(90, 40, 10)
+	quickStroke.Thickness = 2
+	quickStroke.Parent = quickMenuBtn
+	quickMenuBtn.MouseEnter:Connect(function()
+		TweenService:Create(quickMenuBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(255, 232, 190)}):Play()
+	end)
+	quickMenuBtn.MouseLeave:Connect(function()
+		TweenService:Create(quickMenuBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(245, 215, 160)}):Play()
+	end)
+	quickMenuBtn.MouseButton1Click:Connect(function()
+		playClick()
+		showScreen(mainMenu)
+	end)
+
+	local BODY_Y = 118
+	local BODY_H = GAME_H - BODY_Y
+	local SIDE_W = 200
+	local RIGHT_W = 300
+	local CENTER_X = SIDE_W + 10
+	local CENTER_W = GAME_W - SIDE_W - RIGHT_W - 20
+	local RIGHT_X = GAME_W - RIGHT_W
+
+	local sideBar = makePanel(gameRoot, 0, BODY_Y, SIDE_W, BODY_H)
+
+	local sideScroll = Instance.new("ScrollingFrame")
+	sideScroll.Name = "SideList"
+	sideScroll.Position = UDim2.new(0, 8, 0, 8)
+	sideScroll.Size = UDim2.new(1, -16, 1, -16)
+	sideScroll.BackgroundTransparency = 1
+	sideScroll.BorderSizePixel = 0
+	sideScroll.ScrollBarThickness = 5
+	sideScroll.ScrollBarImageColor3 = Color3.fromRGB(215, 120, 30)
+	sideScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	sideScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	sideScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	sideScroll.Parent = sideBar
+
+	local sideList = Instance.new("UIListLayout")
+	sideList.Padding = UDim.new(0, 5)
+	sideList.SortOrder = Enum.SortOrder.LayoutOrder
+	sideList.Parent = sideScroll
+
+	local toastLabel = Instance.new("TextLabel")
+	toastLabel.Name = "Toast"
+	toastLabel.AnchorPoint = Vector2.new(0.5, 0)
+	toastLabel.Position = UDim2.new(0.5, 0, 0, 122)
+	toastLabel.Size = UDim2.new(0, 340, 0, 36)
+	toastLabel.BackgroundColor3 = Color3.fromRGB(34, 20, 10)
+	toastLabel.BackgroundTransparency = 1
+	toastLabel.TextTransparency = 1
+	toastLabel.TextColor3 = GC.Gold
+	toastLabel.Font = Enum.Font.GothamMedium
+	toastLabel.TextSize = 17
+	toastLabel.Text = ""
+	toastLabel.ZIndex = 30
+	toastLabel.Parent = gameRoot
+	Instance.new("UICorner", toastLabel).CornerRadius = UDim.new(0, 8)
+	local toastStroke = Instance.new("UIStroke")
+	toastStroke.Color = GC.Orange
+	toastStroke.Thickness = 1.5
+	toastStroke.Transparency = 1
+	toastStroke.Parent = toastLabel
+
+	local toastId = 0
+	local function showToast(text)
+		toastId += 1
+		local myId = toastId
+		toastLabel.Text = text
+		TweenService:Create(toastLabel, TweenInfo.new(0.15), {BackgroundTransparency = 0.05, TextTransparency = 0}):Play()
+		TweenService:Create(toastStroke, TweenInfo.new(0.15), {Transparency = 0.2}):Play()
+		task.delay(2.2, function()
+			if toastId ~= myId then return end
+			TweenService:Create(toastLabel, TweenInfo.new(0.3), {BackgroundTransparency = 1, TextTransparency = 1}):Play()
+			TweenService:Create(toastStroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
+		end)
+	end
+
+	local SIDE_ITEMS = {
+		{Header = "ТВОЯ ЖИЗНЬ"},
+		{Name = "Жизнь", Icon = "heart", Kind = "tab"},
+		{Name = "Развлечения", Icon = "star", Kind = "tab"},
+		{Name = "Персонаж", Icon = "person", Kind = "tab"},
+		{Header = "ЛЮДИ И МЕСТА"},
+		{Name = "Люди", Icon = "people", Kind = "tab"},
+		{Name = "Места", Icon = "pin", Kind = "tab"},
+		{Header = "ТВОЯ ИСТОРИЯ"},
+		{Name = "События", Icon = "scroll", Kind = "tab"},
+		{Name = "Достижения", Icon = "cup", Kind = "tab"},
+		{Header = "ИГРА"},
+		{Name = "Главное меню", Icon = "door", Kind = "action", Action = "menu"},
+		{Name = "Настройки", Icon = "gear", Kind = "action", Action = "settings"},
+		{Name = "Сохранить игру", Icon = "disk", Kind = "action", Action = "save"},
+	}
+
+	local ROW_NORMAL = ColorSequence.new(Color3.fromRGB(52, 33, 20), Color3.fromRGB(36, 23, 14))
+	local ROW_HOVER = ColorSequence.new(Color3.fromRGB(86, 55, 30), Color3.fromRGB(62, 39, 21))
+	local ROW_SELECTED = ColorSequence.new(Color3.fromRGB(205, 100, 28), Color3.fromRGB(128, 55, 14))
+
+	local sideRows = {}
+	local tabPanels = {}
+	local selectedTab = "Жизнь"
+
+	local function applyRow(name, hovered)
+		local row = sideRows[name]
+		if not row then return end
+		local selected = (name == selectedTab)
+		if selected then
+			row.grad.Color = ROW_SELECTED
+			row.stroke.Color = Color3.fromRGB(255, 181, 48)
+			row.stroke.Thickness = 2
+			row.text.TextColor3 = Color3.fromRGB(255, 244, 220)
+		elseif hovered then
+			row.grad.Color = ROW_HOVER
+			row.stroke.Color = Color3.fromRGB(205, 135, 50)
+			row.stroke.Thickness = 1.5
+			row.text.TextColor3 = GC.Text
+		else
+			row.grad.Color = ROW_NORMAL
+			row.stroke.Color = Color3.fromRGB(105, 58, 20)
+			row.stroke.Thickness = 1
+			row.text.TextColor3 = GC.Text
+		end
+		row.bar.Visible = selected
+	end
+
+	function selectTab(name)
+		selectedTab = name
+		for tabName, panel in pairs(tabPanels) do
+			panel.Visible = (tabName == name)
+		end
+		for rowName in pairs(sideRows) do
+			applyRow(rowName, false)
+		end
+	end
+
+	local function runSideAction(action)
+		if action == "menu" then
+			showScreen(mainMenu)
+		elseif action == "settings" then
+			if GameHooks.OpenSettings then GameHooks.OpenSettings() end
+		elseif action == "save" then
+			showToast("Сохранение появится в одном из обновлений")
+		end
+	end
+
+	for index, item in ipairs(SIDE_ITEMS) do
+		if item.Header then
+			local head = Instance.new("TextLabel")
+			head.LayoutOrder = index
+			head.Size = UDim2.new(1, -8, 0, index == 1 and 22 or 30)
+			head.BackgroundTransparency = 1
+			head.Text = item.Header
+			head.TextColor3 = Color3.fromRGB(215, 150, 70)
+			head.Font = Enum.Font.GothamBold
+			head.TextSize = 13
+			head.TextXAlignment = Enum.TextXAlignment.Left
+			head.TextYAlignment = Enum.TextYAlignment.Bottom
+			head.Parent = sideScroll
+			local headPad = Instance.new("UIPadding")
+			headPad.PaddingLeft = UDim.new(0, 6)
+			headPad.PaddingBottom = UDim.new(0, 2)
+			headPad.Parent = head
+		else
+			local btn = Instance.new("TextButton")
+			btn.Name = "Row_" .. item.Name
+			btn.LayoutOrder = index
+			btn.Size = UDim2.new(1, -8, 0, 42)
+			btn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			btn.BorderSizePixel = 0
+			btn.Text = ""
+			btn.AutoButtonColor = false
+			btn.Parent = sideScroll
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+			local grad = Instance.new("UIGradient")
+			grad.Rotation = 90
+			grad.Color = ROW_NORMAL
+			grad.Parent = btn
+			local stroke = Instance.new("UIStroke")
+			stroke.Parent = btn
+
+			local bar = Instance.new("Frame")
+			bar.Size = UDim2.new(0, 4, 1, -14)
+			bar.Position = UDim2.new(0, 0, 0, 7)
+			bar.BackgroundColor3 = Color3.fromRGB(255, 200, 70)
+			bar.BorderSizePixel = 0
+			bar.Visible = false
+			bar.ZIndex = 3
+			bar.Parent = btn
+			Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+			local chip = Instance.new("Frame")
+			chip.Position = UDim2.new(0, 10, 0.5, -15)
+			chip.Size = UDim2.new(0, 30, 0, 30)
+			chip.BackgroundColor3 = Color3.fromRGB(24, 14, 8)
+			chip.BorderSizePixel = 0
+			chip.ZIndex = 2
+			chip.Parent = btn
+			Instance.new("UICorner", chip).CornerRadius = UDim.new(0, 7)
+			local glyph = drawIcon(chip, item.Icon, Color3.fromRGB(255, 190, 80), Color3.fromRGB(24, 14, 8), 3)
+			glyph.Position = UDim2.new(0, 4, 0, 4)
+			glyph.Size = UDim2.new(0, 22, 0, 22)
+
+			local text = Instance.new("TextLabel")
+			text.Position = UDim2.new(0, 50, 0, 0)
+			text.Size = UDim2.new(1, -56, 1, 0)
+			text.BackgroundTransparency = 1
+			text.Text = item.Name
+			text.TextColor3 = GC.Text
+			text.Font = MEDIEVAL_FONT_RU
+			text.TextSize = 21
+			text.TextXAlignment = Enum.TextXAlignment.Left
+			text.TextTruncate = Enum.TextTruncate.AtEnd
+			text.ZIndex = 2
+			text.Parent = btn
+
+			sideRows[item.Name] = {btn = btn, grad = grad, stroke = stroke, bar = bar, text = text}
+			applyRow(item.Name, false)
+
+			btn.MouseEnter:Connect(function() applyRow(item.Name, true) end)
+			btn.MouseLeave:Connect(function() applyRow(item.Name, false) end)
+			btn.MouseButton1Click:Connect(function()
+				playClick()
+				if item.Kind == "tab" then
+					selectTab(item.Name)
+				else
+					runSideAction(item.Action)
+				end
+			end)
+		end
+	end
+
+	local lifePanel = makePanel(gameRoot, CENTER_X, BODY_Y, CENTER_W, BODY_H)
+	tabPanels["Жизнь"] = lifePanel
+
+	makeText(lifePanel, "Что ты делаешь в этом году?", 16, 10, CENTER_W - 32, 36, 28, GC.Gold, MEDIEVAL_FONT_RU)
+	makeText(lifePanel, "Любое действие меняет характеристики и состарит персонажа на год.", 16, 46, CENTER_W - 32, 22, 15, GC.Muted)
+
+	local actionsScroll = Instance.new("ScrollingFrame")
+	actionsScroll.Name = "Actions"
+	actionsScroll.Position = UDim2.new(0, 12, 0, 78)
+	actionsScroll.Size = UDim2.new(1, -24, 1, -90)
+	actionsScroll.BackgroundTransparency = 1
+	actionsScroll.BorderSizePixel = 0
+	actionsScroll.ScrollBarThickness = 5
+	actionsScroll.ScrollBarImageColor3 = Color3.fromRGB(190, 112, 28)
+	actionsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	actionsScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	actionsScroll.Parent = lifePanel
+
+	local actionsList = Instance.new("UIListLayout")
+	actionsList.Padding = UDim.new(0, 10)
+	actionsList.SortOrder = Enum.SortOrder.LayoutOrder
+	actionsList.Parent = actionsScroll
+
+	local ACTIONS = {
+		{Id = "TrainStrength", Title = "⚔ Тренировать силу", Desc = "+3 к Силе, -5 к Здоровью, +5 к Стрессу"},
+		{Id = "TrainMagic", Title = "✨ Изучать магию", Desc = "+3 к Магии, -5 к Здоровью, +4 к Стрессу"},
+		{Id = "Work", Title = "💰 Работать", Desc = "+25 золота, -8 к Здоровью, +8 к Стрессу"},
+		{Id = "Rest", Title = "🛌 Отдыхать", Desc = "+18 к Здоровью, +6 к Счастью, -12 к Стрессу"},
+	}
+
+	for i, action in ipairs(ACTIONS) do
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, -8, 0, 68)
+		btn.LayoutOrder = i
+		btn.BackgroundColor3 = Color3.fromRGB(110, 38, 0)
+		btn.Text = ""
+		btn.AutoButtonColor = false
+		btn.Parent = actionsScroll
+
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 8)
+		c.Parent = btn
+		local s = Instance.new("UIStroke")
+		s.Color = Color3.fromRGB(230, 120, 40)
+		s.Thickness = 1.5
+		s.Transparency = 0.3
+		s.Parent = btn
+
+		makeText(btn, action.Title, 16, 8, CENTER_W - 60, 28, 21, GC.Text, Enum.Font.GothamBold)
+		makeText(btn, action.Desc, 16, 38, CENTER_W - 60, 22, 16, Color3.fromRGB(235, 205, 165))
+
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(165, 58, 0)}):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(110, 38, 0)}):Play()
+		end)
+
+		btn.MouseButton1Click:Connect(function()
+			playClick()
+			local success, message, newLife = DoAction:InvokeServer(action.Id)
+			if success then
+				updateUI(newLife)
+				if not newLife.IsAlive then
+					showDeathScreen(message)
+				end
+			end
+		end)
+	end
+
+	local function createPlaceholderPanel(name, text)
+		local panel = makePanel(gameRoot, CENTER_X, BODY_Y, CENTER_W, BODY_H)
+		panel.Visible = false
+		makeText(panel, name, 16, 10, CENTER_W - 32, 36, 28, GC.Gold, MEDIEVAL_FONT_RU)
+		local body = makeText(panel, text, 30, BODY_H / 2 - 40, CENTER_W - 60, 80, 22, GC.Muted, MEDIEVAL_FONT_RU, Enum.TextXAlignment.Center)
+		body.TextWrapped = true
+		tabPanels[name] = panel
+	end
+
+	createPlaceholderPanel("Развлечения", "Раздел в разработке.")
+	createPlaceholderPanel("Персонаж", "Подробности о персонаже смотри в правой колонке.")
+	createPlaceholderPanel("Люди", "Раздел в разработке.")
+	createPlaceholderPanel("Места", "Раздел в разработке.")
+	createPlaceholderPanel("События", "Раздел в разработке.")
+	createPlaceholderPanel("Достижения", "Раздел в разработке.")
+	selectTab("Жизнь")
+
+	local rightPanel = makePanel(gameRoot, RIGHT_X, BODY_Y, RIGHT_W, BODY_H)
+
+	local rightScroll = Instance.new("ScrollingFrame")
+	rightScroll.Position = UDim2.new(0, 10, 0, 10)
+	rightScroll.Size = UDim2.new(1, -20, 1, -20)
+	rightScroll.BackgroundTransparency = 1
+	rightScroll.BorderSizePixel = 0
+	rightScroll.ScrollBarThickness = 5
+	rightScroll.ScrollBarImageColor3 = Color3.fromRGB(190, 112, 28)
+	rightScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	rightScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	rightScroll.Parent = rightPanel
+
+	local rightList = Instance.new("UIListLayout")
+	rightList.Padding = UDim.new(0, 10)
+	rightList.SortOrder = Enum.SortOrder.LayoutOrder
+	rightList.Parent = rightScroll
+
+	local function makeBarCard(order, caption)
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -8, 0, 62)
+		card.LayoutOrder = order
+		card.BackgroundColor3 = GC.Card
+		card.BorderSizePixel = 0
+		card.Parent = rightScroll
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+
+		makeText(card, caption, 12, 6, 140, 26, 18, GC.Text, Enum.Font.GothamMedium)
+		local value = makeText(card, "—", RIGHT_W - 20 - 8 - 12 - 120, 6, 120, 26, 18, GC.Green, Enum.Font.GothamBold, Enum.TextXAlignment.Right)
+
+		local track = Instance.new("Frame")
+		track.Position = UDim2.new(0, 12, 0, 38)
+		track.Size = UDim2.new(1, -24, 0, 12)
+		track.BackgroundColor3 = Color3.fromRGB(15, 9, 5)
+		track.BorderSizePixel = 0
+		track.Parent = card
+		Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+		local fill = Instance.new("Frame")
+		fill.Size = UDim2.new(1, 0, 1, 0)
+		fill.BackgroundColor3 = GC.Green
+		fill.BorderSizePixel = 0
+		fill.Parent = track
+		Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+		return value, fill
+	end
+
+	healthValueLabel, healthFill = makeBarCard(1, "Здоровье")
+	happyValueLabel, happyFill = makeBarCard(2, "Счастье")
+	stressValueLabel, stressFill = makeBarCard(3, "Стресс")
+
+	local function makeCard(order, titleText)
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1, -8, 0, 0)
+		card.AutomaticSize = Enum.AutomaticSize.Y
+		card.LayoutOrder = order
+		card.BackgroundColor3 = GC.Card
+		card.BorderSizePixel = 0
+		card.Parent = rightScroll
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+
+		local pad = Instance.new("UIPadding")
+		pad.PaddingLeft = UDim.new(0, 12)
+		pad.PaddingRight = UDim.new(0, 12)
+		pad.PaddingTop = UDim.new(0, 8)
+		pad.PaddingBottom = UDim.new(0, 10)
+		pad.Parent = card
+
+		local list = Instance.new("UIListLayout")
+		list.Padding = UDim.new(0, 6)
+		list.SortOrder = Enum.SortOrder.LayoutOrder
+		list.Parent = card
+
+		local head = Instance.new("TextLabel")
+		head.Size = UDim2.new(1, 0, 0, 28)
+		head.LayoutOrder = 0
+		head.BackgroundTransparency = 1
+		head.Text = titleText
+		head.TextColor3 = GC.Gold
+		head.Font = MEDIEVAL_FONT_RU
+		head.TextSize = 24
+		head.TextXAlignment = Enum.TextXAlignment.Left
+		head.Parent = card
+
+		return card
+	end
+
+	local statsCard = makeCard(4, "Характеристики")
+
+	local statsGrid = Instance.new("Frame")
+	statsGrid.Size = UDim2.new(1, 0, 0, 0)
+	statsGrid.AutomaticSize = Enum.AutomaticSize.Y
+	statsGrid.LayoutOrder = 1
+	statsGrid.BackgroundTransparency = 1
+	statsGrid.Parent = statsCard
+
+	local statsGridLayout = Instance.new("UIGridLayout")
+	statsGridLayout.CellSize = UDim2.new(1, 0, 0, 28)
+	statsGridLayout.CellPadding = UDim2.new(0, 0, 0, 4)
+	statsGridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	statsGridLayout.Parent = statsGrid
+
+	charStatLabels = {}
+	local function addCharStatRow(key, caption, order, valueColor)
+		local cell = Instance.new("Frame")
+		cell.LayoutOrder = order
+		cell.BackgroundTransparency = 1
+		cell.Parent = statsGrid
+
+		local cap = Instance.new("TextLabel")
+		cap.Size = UDim2.new(0.6, 0, 1, 0)
+		cap.BackgroundTransparency = 1
+		cap.Text = caption
+		cap.TextColor3 = GC.Muted
+		cap.Font = Enum.Font.Gotham
+		cap.TextSize = 16
+		cap.TextXAlignment = Enum.TextXAlignment.Left
+		cap.Parent = cell
+
+		local val = Instance.new("TextLabel")
+		val.Position = UDim2.new(0.6, 0, 0, 0)
+		val.Size = UDim2.new(0.4, 0, 1, 0)
+		val.BackgroundTransparency = 1
+		val.Text = "—"
+		val.TextColor3 = valueColor or GC.Text
+		val.Font = Enum.Font.GothamBold
+		val.TextSize = 17
+		val.TextXAlignment = Enum.TextXAlignment.Right
+		val.Parent = cell
+
+		charStatLabels[key] = val
+	end
+
+	addCharStatRow("Strength", "Сила", 1)
+	addCharStatRow("Agility", "Ловкость", 2)
+	addCharStatRow("Intellect", "Интеллект", 3)
+	addCharStatRow("Vitality", "Живучесть", 4)
+	addCharStatRow("Mana", "Мана", 5)
+	addCharStatRow("Magic", "Магия", 6)
+	addCharStatRow("Luck", "Удача", 7)
+	addCharStatRow("Charisma", "Харизма", 8)
+	addCharStatRow("Gold", "Золото", 9, GC.Gold)
+
+	local aboutCard = makeCard(5, "О персонаже")
+
+	charInfoLabel = Instance.new("TextLabel")
+	charInfoLabel.Name = "CharacterInfo"
+	charInfoLabel.Size = UDim2.new(1, 0, 0, 0)
+	charInfoLabel.AutomaticSize = Enum.AutomaticSize.Y
+	charInfoLabel.LayoutOrder = 1
+	charInfoLabel.BackgroundTransparency = 1
+	charInfoLabel.Text = "Персонаж ещё не создан."
+	charInfoLabel.TextColor3 = GC.Text
+	charInfoLabel.Font = Enum.Font.Gotham
+	charInfoLabel.TextSize = 16
+	charInfoLabel.TextWrapped = true
+	charInfoLabel.TextXAlignment = Enum.TextXAlignment.Left
+	charInfoLabel.TextYAlignment = Enum.TextYAlignment.Top
+	charInfoLabel.Parent = aboutCard
+end
+
+-- =========================================
+-- 4. DEATH SCREEN
+-- =========================================
+
+local deathFrame = Instance.new("Frame")
+deathFrame.Name = "DeathFrame"
+deathFrame.Size = UDim2.new(1, 0, 1, 0)
+deathFrame.BackgroundTransparency = 1
+deathFrame.Visible = false
+deathFrame.Parent = screenGui
+
+local deathBox = Instance.new("Frame")
+deathBox.Size = UDim2.new(0, 400, 0, 310)
+deathBox.Position = UDim2.new(0.5, -200, 0.5, -155)
+deathBox.BackgroundColor3 = Color3.fromRGB(25, 10, 5)
+deathBox.Parent = deathFrame
+
+local deathCorner = Instance.new("UICorner")
+deathCorner.CornerRadius = UDim.new(0, 14)
+deathCorner.Parent = deathBox
+
+local deathStroke = Instance.new("UIStroke")
+deathStroke.Color = Color3.fromRGB(180, 50, 20)
+deathStroke.Thickness = 2
+deathStroke.Parent = deathBox
+
+local deathTitle = Instance.new("TextLabel")
+deathTitle.Size = UDim2.new(1, 0, 0, 50)
+deathTitle.BackgroundTransparency = 1
+deathTitle.Text = "Ты умер"
+deathTitle.TextColor3 = Color3.fromRGB(255, 90, 70)
+deathTitle.Font = Enum.Font.GothamBold
+deathTitle.TextSize = 26
+deathTitle.Parent = deathBox
+
+local deathReason = Instance.new("TextLabel")
+deathReason.Name = "Reason"
+deathReason.Size = UDim2.new(1, -40, 0, 50)
+deathReason.Position = UDim2.new(0, 20, 0, 55)
+deathReason.BackgroundTransparency = 1
+deathReason.Text = ""
+deathReason.TextColor3 = Color3.fromRGB(230, 200, 180)
+deathReason.Font = Enum.Font.Gotham
+deathReason.TextSize = 16
+deathReason.TextWrapped = true
+deathReason.Parent = deathBox
+
+local reincarnateBtn = Instance.new("TextButton")
+reincarnateBtn.Size = UDim2.new(0, 190, 0, 46)
+reincarnateBtn.Position = UDim2.new(0.5, -95, 1, -175)
+reincarnateBtn.BackgroundColor3 = Color3.fromRGB(150, 50, 10)
+reincarnateBtn.Text = "Реинкарнировать"
+reincarnateBtn.TextColor3 = Color3.fromRGB(255, 230, 180)
+reincarnateBtn.Font = Enum.Font.GothamBold
+reincarnateBtn.TextSize = 17
+reincarnateBtn.Parent = deathBox
+
+local reincCorner = Instance.new("UICorner")
+reincCorner.CornerRadius = UDim.new(0, 8)
+reincCorner.Parent = reincarnateBtn
+
+local deathRandomBtn = Instance.new("TextButton")
+deathRandomBtn.Size = UDim2.new(0, 190, 0, 46)
+deathRandomBtn.Position = UDim2.new(0.5, -95, 1, -120)
+deathRandomBtn.BackgroundColor3 = Color3.fromRGB(110, 40, 8)
+deathRandomBtn.Text = "Случайный персонаж"
+deathRandomBtn.TextColor3 = Color3.fromRGB(255, 230, 180)
+deathRandomBtn.Font = Enum.Font.GothamBold
+deathRandomBtn.TextSize = 15
+deathRandomBtn.Parent = deathBox
+
+local deathRandomCorner = Instance.new("UICorner")
+deathRandomCorner.CornerRadius = UDim.new(0, 8)
+deathRandomCorner.Parent = deathRandomBtn
+
+local deathToMenuBtn = Instance.new("TextButton")
+deathToMenuBtn.Size = UDim2.new(0, 190, 0, 38)
+deathToMenuBtn.Position = UDim2.new(0.5, -95, 1, -58)
+deathToMenuBtn.BackgroundColor3 = Color3.fromRGB(70, 25, 5)
+deathToMenuBtn.Text = "В главное меню"
+deathToMenuBtn.TextColor3 = Color3.fromRGB(230, 190, 150)
+deathToMenuBtn.Font = Enum.Font.Gotham
+deathToMenuBtn.TextSize = 15
+deathToMenuBtn.Parent = deathBox
+
+local deathMenuCorner = Instance.new("UICorner")
+deathMenuCorner.CornerRadius = UDim.new(0, 8)
+deathMenuCorner.Parent = deathToMenuBtn
+
+-- =========================================
+-- 5. SETTINGS
+-- =========================================
+
+local settingsFrame = Instance.new("Frame")
+settingsFrame.Name = "SettingsFrame"
+settingsFrame.Size = UDim2.new(0, 420, 0, 380)
+settingsFrame.Position = UDim2.new(0.5, -210, 0.5, -190)
+settingsFrame.BackgroundColor3 = Color3.fromRGB(22, 12, 6)
+settingsFrame.Visible = false
+settingsFrame.ZIndex = 10
+settingsFrame.Parent = screenGui
+
+local setCorner = Instance.new("UICorner")
+setCorner.CornerRadius = UDim.new(0, 14)
+setCorner.Parent = settingsFrame
+
+local setStroke = Instance.new("UIStroke")
+setStroke.Color = Color3.fromRGB(200, 80, 20)
+setStroke.Thickness = 2
+setStroke.Transparency = 0.25
+setStroke.Parent = settingsFrame
+
+local setTitle = Instance.new("TextLabel")
+setTitle.Size = UDim2.new(1, 0, 0, 55)
+setTitle.BackgroundTransparency = 1
+setTitle.Text = "Настройки"
+setTitle.TextColor3 = Color3.fromRGB(255, 200, 90)
+setTitle.Font = Enum.Font.GothamBold
+setTitle.TextSize = 24
+setTitle.ZIndex = 10
+setTitle.Parent = settingsFrame
+
+local function createSlider(parent, yPos, labelText, minVal, maxVal, currentVal, callback)
+	local container = Instance.new("Frame")
+	container.Size = UDim2.new(1, -50, 0, 70)
+	container.Position = UDim2.new(0, 25, 0, yPos)
+	container.BackgroundTransparency = 1
+	container.ZIndex = 10
+	container.Parent = parent
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 24)
+	label.BackgroundTransparency = 1
+	label.Text = labelText
+	label.TextColor3 = Color3.fromRGB(255, 210, 160)
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 16
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.ZIndex = 10
+	label.Parent = container
+
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Size = UDim2.new(0, 60, 0, 24)
+	valueLabel.Position = UDim2.new(1, -60, 0, 0)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.Text = math.floor(currentVal * 100 + 0.5) .. "%"
+	valueLabel.TextColor3 = Color3.fromRGB(255, 170, 80)
+	valueLabel.Font = Enum.Font.Gotham
+	valueLabel.TextSize = 15
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.ZIndex = 10
+	valueLabel.Parent = container
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 10)
+	track.Position = UDim2.new(0, 0, 0, 38)
+	track.BackgroundColor3 = Color3.fromRGB(50, 25, 10)
+	track.ZIndex = 10
+	track.Parent = container
+
+	local trackCorner = Instance.new("UICorner")
+	trackCorner.CornerRadius = UDim.new(1, 0)
+	trackCorner.Parent = track
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new((currentVal - minVal) / (maxVal - minVal), 0, 1, 0)
+	fill.BackgroundColor3 = Color3.fromRGB(220, 90, 20)
+	fill.ZIndex = 10
+	fill.Parent = track
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(1, 0)
+	fillCorner.Parent = fill
+
+	local knob = Instance.new("Frame")
+	knob.Size = UDim2.new(0, 22, 0, 22)
+	knob.Position = UDim2.new((currentVal - minVal) / (maxVal - minVal), -11, 0.5, -11)
+	knob.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+	knob.ZIndex = 11
+	knob.Parent = track
+
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(1, 0)
+	knobCorner.Parent = knob
+
+	local dragging = false
+
+	local function updateSlider(inputPos)
+		local relativeX = math.clamp((inputPos.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+		local value = minVal + (maxVal - minVal) * relativeX
+		fill.Size = UDim2.new(relativeX, 0, 1, 0)
+		knob.Position = UDim2.new(relativeX, -11, 0.5, -11)
+		valueLabel.Text = math.floor(value * 100 + 0.5) .. "%"
+		callback(value)
+	end
+
+	knob.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+		end
+	end)
+
+	track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			updateSlider(input.Position)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateSlider(input.Position)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+end
+
+createSlider(settingsFrame, 70, "Громкость музыки", 0, 1, Settings.MusicVolume, function(val)
+	Settings.MusicVolume = val
+end)
+
+createSlider(settingsFrame, 150, "Громкость взаимодействий", 0, 1, Settings.UIVolume, function(val)
+	Settings.UIVolume = val
+	clickSound.Volume = val
+end)
+
+createSlider(settingsFrame, 230, "Размер интерфейса", 0.75, 1.35, Settings.UIScale, function(val)
+	Settings.UIScale = val
+	uiScale.Scale = val
+end)
+
+local closeSettings = Instance.new("TextButton")
+closeSettings.Size = UDim2.new(0, 160, 0, 44)
+closeSettings.Position = UDim2.new(0.5, -80, 1, -65)
+closeSettings.BackgroundColor3 = Color3.fromRGB(150, 55, 10)
+closeSettings.Text = "Закрыть"
+closeSettings.TextColor3 = Color3.fromRGB(255, 230, 180)
+closeSettings.Font = Enum.Font.GothamMedium
+closeSettings.TextSize = 17
+closeSettings.ZIndex = 10
+closeSettings.Parent = settingsFrame
+
+local closeCorner = Instance.new("UICorner")
+closeCorner.CornerRadius = UDim.new(0, 9)
+closeCorner.Parent = closeSettings
+
+closeSettings.MouseButton1Click:Connect(function()
+	playClick()
+	settingsFrame.Visible = false
+end)
+
+local function openSettingsFrame()
+	playClick()
+	settingsFrame.Visible = true
+end
+
+if settingsMenuEntry then
+	settingsMenuEntry.MouseButton1Click:Connect(openSettingsFrame)
+end
+GameHooks.OpenSettings = openSettingsFrame
+
+-- =========================================
+-- 6. СОЗДАНИЕ ПЕРСОНАЖА
+-- =========================================
+
+local NAME_MAX = 20
+local currentCharacter = nil
+
+local function ruLower(s)
+	local out = {}
+	for _, cp in utf8.codes(s) do
+		local c = cp
+		if c >= 0x410 and c <= 0x42F then
+			c += 32
+		elseif c == 0x401 then
+			c = 0x451
+		end
+		table.insert(out, utf8.char(c))
+	end
+	return table.concat(out)
+end
+
+local function trim(s)
+	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function pick(list)
+	return list[math.random(1, #list)]
+end
+
+local Scenarios = {
+	{Name = "Обычная жизнь", Desc = "Обычная жизнь."},
+	{
+		Name = "Сирота войны",
+		Desc = "Ты родился в зоне войны. Твои родители погибли. Цель: дожить до 40 лет. Награда: +40 Наследия.",
+		DescF = "Ты родилась в зоне войны. Твои родители погибли. Цель: дожить до 40 лет. Награда: +40 Наследия.",
+	},
+	{
+		Name = "Безмановый дворянин", NameF = "Безмановая дворянка",
+		Desc = "Ты родился в знатной семье, но почти лишён маны. Цель: достичь ранга Святого во владении мечом (ур. 40).",
+		DescF = "Ты родилась в знатной семье, но почти лишена маны. Цель: достичь ранга Святой во владении мечом (ур. 40).",
+	},
+	{
+		Name = "Проклятый с рождения", NameF = "Проклятая с рождения",
+		Desc = "Ты родился проклятым, со слабым телосложением. Цель: дожить до 60 лет. Награда: +50 Наследия.",
+		DescF = "Ты родилась проклятой, со слабым телосложением. Цель: дожить до 60 лет. Награда: +50 Наследия.",
+	},
+	{
+		Name = "Уличный беспризорник", NameF = "Уличная беспризорница",
+		Desc = "Ты сирота из беднейшей деревни. Цель: подняться до зажиточного сословия. Награда: +60 Наследия.",
+	},
+	{
+		Name = "Одарённый", NameF = "Одарённая",
+		Desc = "Ты магический вундеркинд, родившийся в городе магов. Цель: достичь королевского ранга в магии.",
+		DescF = "Ты магический вундеркинд, родившаяся в городе магов. Цель: достичь королевского ранга в магии.",
+	},
+	{
+		Name = "Последний из племени", NameF = "Последняя из племени",
+		Desc = "Ты родился в отдалённом племени на краю мира. Цель: посетить 5 разных мест.",
+		DescF = "Ты родилась в отдалённом племени на краю мира. Цель: посетить 5 разных мест.",
+	},
+	{Name = "Дитя дракона", Desc = "Драконья кровь течёт в твоих жилах. Цель: убить дракона."},
+	{
+		Name = "Пацифист", NameF = "Пацифистка",
+		Desc = "Ты поклялся никому не причинять вреда. Цель: дожить до 70 лет, не участвуя в боях.",
+		DescF = "Ты поклялась никому не причинять вреда. Цель: дожить до 70 лет, не участвуя в боях.",
+	},
+	{
+		Name = "Отмеченный Белой фигурой", NameF = "Отмеченная Белой фигурой",
+		Desc = "Белая фигура обратила на тебя внимание с самого рождения. Цель: победить Белую фигуру 5 раз.",
+	},
+}
+
+local Difficulties = {
+	{Name = "Мирная", Desc = "Мир без обычных опасностей."},
+	{Name = "Обычная", Desc = "Мир таким, каким он должен быть: опасным, несправедливым и достойным того, чтобы жить."},
+	{Name = "Сложная", Desc = "Повышенная сложность."},
+	{Name = "Кошмар", Desc = "Почти никто не живёт долго."},
+	{Name = "Истязание", Desc = "Самый суровый уровень сложности."},
+}
+
+local Races = {
+	{Name = "Рандом", Desc = "Мир выберет твою расу и место, где живёт твой народ.", Random = true},
+	{Name = "Человек", Desc = "Короткоживущие, беспокойные и бесконечно приспосабливающиеся.\nОбычная человеческая продолжительность жизни (старость около 60 лет) · +5% к опыту ВСЕХ навыков · Частота: 41% случайных рождений"},
+	{Name = "Эльф", Desc = "Долгоживущие дети древних лесов, одаренные маной.\nПродолжительность жизни ×2.4 — живут на 140% дольше человека (старость около 144 лет) · -12 к Силе при рождении · +12 к Ловкости при рождении · -12 к Живучести при рождении · +12 к Мане при рождении (больший запас маны) · +20% к опыту Магии · +20% к опыту Музыки · Частота: 10% случайных рождений"},
+	{Name = "Гном", Desc = "Упрямый каменный народ из глубоких крепостей; мастера кузнечного дела.\nПродолжительность жизни ×1.9 — живут на 90% дольше человека (старость около 114 лет) · +12 к Силе при рождении · -12 к Ловкости при рождении · +12 к Живучести при рождении · +30% к опыту Ремесла · Частота: 10% случайных рождений"},
+	{Name = "Полурослик", Desc = "Маленький, веселый и подозрительно удачливый народ.\nПродолжительность жизни ×1.3 — живут на 30% дольше человека (старость около 78 лет) · -12 к Силе при рождении · +12 к Ловкости при рождении · +12 к Удаче при рождении · +20% к опыту Фермерства · +20% к опыту Скрытности · Частота: 8% случайных рождений"},
+	{Name = "Полуорк", Desc = "Сильные, презираемые и яростно гордые.\nПродолжительность жизни ×0.85 — на 15% меньше, чем у человека (старость около 51 года) · +12 к Силе при рождении · -12 к Интеллекту при рождении · +12 к Живучести при рождении · +20% к опыту Фитнеса · +20% к опыту Владения мечом · Частота: 7% случайных рождений"},
+	{Name = "Зверолюд", Desc = "Дикий народ степей и глубоких лесов.\nПродолжительность жизни ×0.9 — на 10% меньше, чем у человека (старость около 54 лет) · +12 к Ловкости при рождении · +20% к опыту Исследования · +30% к опыту Выживания · Частота: 7% случайных рождений"},
+	{Name = "Демон", Desc = "🔒 ЗАКРЫТО — Победите Короля Демонов один раз (убейте его или свергните и займите его трон), чтобы открыть расу Демонов.\nРогатые, долгоживущие и жаждущие власти. Древнейшие враги всех остальных народов — и сильнейшие из них.\nПродолжительность жизни ×2.2 — живут на 120% дольше человека (старость около 132 лет) · +12 к Силе при рождении · +12 к Мане при рождении (больший запас маны) · -12 к Харизме при рождении · -40% к опыту Веры · +25% к опыту Магии · +20% к опыту Владения мечом · Демоническое тело: +12% к боевой мощи, -10% к шансу смерти каждый год, -10% к стрессу · Регенерация: +15 к макс. здоровью, и вы немного исцеляетесь каждый год · Ранги демонов: Бес -> Низший демон -> Высший демон -> Лорд демонов -> Архидемон. Каждый ранг добавляет боевую мощь (до +35%) · Пробуждение крови в 16 лет: выберите Адское пламя, Кровавый пакт, Бездонное очарование или Теневые крылья · Страх вне Демонического измерения: -15% к получению отношений там, и храмы отворачиваются от вас · Частота: 3% случайных рождений", Locked = true},
+	{Name = "Дракон", Desc = "🔒 ЗАКРЫТО — Победите Орсвальда, Бога-Дракона, один раз, чтобы открыть расу Драконов.\nЧешуйчатые, гордые и почти бессмертные. Драконы в человекоподобной форме, копящие золото и обиды веками.\nПродолжительность жизни ×3 — живут на 200% дольше человека (старость около 180 лет) · +12 к Силе при рождении · -12 к Ловкости при рождении · +12 к Живучести при рождении · +12 к Мане при рождении (больший запас маны) · -12 к Харизме при рождении · +20% к опыту Фитнеса · +15% к опыту Магии · +15% к опыту Владения мечом · Драконья чешуя: +15% к боевой мощи и -15% к шансу смерти каждый год · Рожденный дышать огнем: +20 к сродству с Огнем при рождении и +25 к макс. здоровью · Сокровищница: +15% золота из любого источника · Драконы растут с возрастом: Детеныш (25) -> Дрейк (25) -> Змей (60) -> Старший дракон (110) -> Древний дракон (170), вплоть до +45% к боевой мощи · Страх: рыцари охотятся на драконов ради славы, а люди держатся на расстоянии (-10% к получению отношений) · Частота: 2% случайных рождений", Locked = true},
+	{Name = "Ангел", Desc = "🔒 ЗАКРЫТО — Достигните 60 уровня Веры в любой жизни, чтобы открыть расу Ангелов.\nКрылатые, сияющие и редкие. Они рождаются с тусклым ореолом, перед которым преклоняются верующие.\nПродолжительность жизни ×2.5 — живут на 150% дольше человека (старость около 150 лет) · -12 к Силе при рождении · +12 к Мане при рождении (больший запас маны) · +12 к Харизме при рождении · +35% к опыту Веры · +15% к опыту Магии · +20% к опыту Медицины · Ореол: -12% к шансу смерти каждый год и +15% к славе · Святой свет: рождаются с +25 к сродству с новой магией Света · Возлюбленные: +10% к получению отношений · Частота: 2% случайных рождений", Locked = true},
+	{Name = "Ревенант", Desc = "🔒 ЗАКРЫТО — Победите Рандора Мэрроу, Бога Смерти, чтобы открыть расу Ревенантов.\nКости, скрепленные упрямой волей. Они не стареют, как живые, — и живые им не доверяют.\nПродолжительность жизни ×4 — живут на 300% дольше человека (старость около 240 лет) · +12 к Живучести при рождении · +12 к Мане при рождении (больший запас маны) · -24 к Харизме при рождении · -30% к опыту Харизмы · +20% к опыту Магии · -30% к опыту Медицины · +10% к опыту Владения мечом · Неупокоенные: -25% к шансу смерти каждый год · Костяное тело: +10% к боевой мощи и +20 к макс. здоровью · Ужас: -20% к получению отношений · Отмеченные могилой: рождаются с +25 к сродству с новой магией Тьмы · Частота: 2% случайных рождений", Locked = true},
+	{Name = "Тенерождённый", Desc = "Древние кланы воинов с третьим глазом на лбу. Всеми презираемые — за проклятие, которое они не заслужили.\nПродолжительность жизни ×3.5 — живут на 250% дольше человека (старость около 210 лет) · +12 к Силе при рождении · +12 к Ловкости при рождении · -12 к Харизме при рождении · +20% к опыту Скрытности · +10% к опыту Выживания · +25% к опыту Владения мечом · Третий глаз: +15% к боевой мощи (они видят любую приближающуюся атаку) · Рожденные с копьем: копья увеличивают вашу силу меча еще на 10% · Древнее проклятие: -15% к получению отношений · Частота: 4% случайных рождений"},
+	{Name = "Морской народ", Desc = "Морской народ с жабрами и серебристой чешуей, чувствующий себя как дома и на пристани, и под волнами. Торговцы и исследователи всех побережий.\nПродолжительность жизни ×1.6 — живут на 60% дольше человека (старость около 96 лет) · -12 к Силе при рождении · +12 к Ловкости при рождении · +12 к Харизме при рождении · +25% к опыту Исследования · +15% к опыту Выживания · +20% к опыту Торговли · Путник приливов: рождаются с +25 к сродству с Водой · Морской торговец: +15% золота из любого источника · Жабры: -8% к шансу смерти каждый год · Частота: 5% случайных рождений"},
+}
+
+local Places = {
+	{Name = "Нищая деревня", Desc = "Здесь всегда не хватает еды. Богатство — это миф, а выживание — ежедневная борьба."},
+	{Name = "Обычная деревня", Desc = "Тихая жизнь, сельское хозяйство и спокойные дни. Здесь не бывает роскоши, но и голод не грозит."},
+	{Name = "Малый город", Desc = "Небольшой городок с оживленным рынком. Здесь можно найти работу и торговцев."},
+	{Name = "Торговый город", Desc = "Крупный узел торговых путей. Здесь пахнет пряностями и деньгами. Отличные возможности для заработка."},
+	{Name = "Большой город", Desc = "Огромный город с высокими стенами и академиями. Множество возможностей, но и опасностей."},
+	{Name = "Дворянское поместье", Desc = "Ты родился в роскоши. У тебя есть слуги и золото, но общество ожидает от тебя многого."},
+	{Name = "Королевский дворец", Desc = "Ты — дитя королевской крови. Вся страна у твоих ног, но за троном всегда плетутся интриги."},
+	{Name = "Лесная глушь", Desc = "Место, далекое от цивилизации. Здесь правит природа, и каждый день — испытание на прочность."},
+	{Name = "Горная крепость", Desc = "Город, высеченный в скалах. Здесь повсюду слышен стук молотов и звон кирок."},
+	{Name = "Портовый город", Desc = "Шумный портовый городок. Здесь живут моряки, а ветер всегда пахнет солью."},
+}
+
+local function addRandomOption(list, desc)
+	table.insert(list, 1, {Name = "Рандом", Random = true, Desc = desc or ""})
+end
+
+local function toEntries(list)
+	local t = {}
+	for _, name in ipairs(list) do
+		table.insert(t, {Name = name})
+	end
+	return t
+end
+
+local Hair = toEntries({
+	"Чёрные", "Белые", "Русые", "Светлые", "Каштановые", "Рыжие", "Медные",
+	"Пепельные", "Платиновые", "Серебристые", "Золотистые", "Седые",
+	"Синие", "Голубые", "Бирюзовые", "Зелёные", "Изумрудные",
+	"Красные", "Багровые", "Бордовые", "Розовые", "Фиолетовые", "Лавандовые",
+})
+local Eyes = toEntries({
+	"Чёрные", "Карие", "Ореховые", "Янтарные", "Золотые", "Серые",
+	"Голубые", "Синие", "Бирюзовые", "Зелёные", "Изумрудные",
+	"Красные", "Багровые", "Розовые", "Фиолетовые", "Лиловые", "Белые", "Разноцветные",
+})
+local Skin = toEntries({
+	"Бледная", "Светлая", "Смуглая", "Оливковая", "Загорелая", "Бронзовая",
+	"Коричневая", "Тёмная", "Чёрная", "Серая", "Пепельная", "Зеленоватая", "Синеватая",
+})
+local Height = toEntries({"Очень низкий", "Невысокий", "Средний", "Высокий", "Очень высокий"})
+
+addRandomOption(Scenarios, "Сценарий выберется случайно.")
+addRandomOption(Difficulties, "Сложность выберется случайно.")
+addRandomOption(Hair)
+addRandomOption(Eyes)
+addRandomOption(Skin)
+addRandomOption(Height)
+
+local Lists = {
+	scenario = Scenarios,
+	difficulty = Difficulties,
+	race = Races,
+	hair = Hair,
+	eyes = Eyes,
+	skin = Skin,
+	height = Height,
+}
+
+local function openIndices(items)
+	local result = {}
+	for i, item in ipairs(items) do
+		if not item.Random and not item.Locked then
+			table.insert(result, i)
+		end
+	end
+	return result
+end
+
+local FirstNames = {
+	["Мужской"] = {
+		"Рудеус", "Пол", "Руйджерд", "Орстед", "Перугиус", "Заноба", "Клифф", "Калман", "Бадигади", "Алек",
+		"Аруманфи", "Гис", "Дога", "Галгау", "Джинас", "Фитис", "Люк", "Пакс", "Атос", "Филипп",
+		"Александр", "Артур", "Виктор", "Даниэль", "Эдриан", "Леон", "Марк", "Теодор", "Рихард", "Каэль", 
+		"Мартин", "Уильям", "Джек", "Роберт", "Томас", "Джеймс", "Гарри", "Оливер", "Джордж", "Генри"
+	},
+	["Женский"] = {
+		"Сильфиетта", "Рокси", "Эрис", "Гислен", "Элинализа", "Зенит", "Лилиа", "Айша", "Норн", "Ариэль",
+		"Сильварил", "Киширика", "Нанахоши", "Сара", "Терез", "Атофератофе", "Лара", "Лили", "Рейда", "Луна",
+		"Алиса", "Анна", "Виктория", "Елена", "Катрин", "Лилия", "Мира", "Селена", "Изабелла", "Эльза", 
+		"Ровена", "София", "Клара", "Эмма", "Оливия", "Шарлотта", "Амелия", "Хлоя", "Грейс", "Эбигейл"
+	},
+}
+
+local LastNames = {
+	"Грейрат", "Бореас", "Асура", "Нотос", "Шириус", "Зеноботт", "Латоре", "Долдия", "Мигурдия", "Спердия",
+	"Хейл", "Валент", "Розен", "Винтер", "Морвейн", "Арден", "Эшфорд", "Блэквуд", "Воронов", "Светлов",
+	"Громов", "Кросс", "Гриффит", "Аркадия", "Драконис", "Лунный", "Стальной", "Огненный", "Теневой", "Златовлас"
+}
+
+local creationData = {
+	gender = "Женский",
+	scenario = 2,
+	difficulty = 3,
+	race = 1,
+	hair = 2,
+	eyes = 2,
+	skin = 2,
+	height = 4,
+}
+
+local function entryName(entry, gender)
+	if (gender or creationData.gender) == "Женский" and entry.NameF then
+		return entry.NameF
+	end
+	return entry.Name
+end
+
+local function entryDesc(entry, gender)
+	if (gender or creationData.gender) == "Женский" and entry.DescF then
+		return entry.DescF
+	end
+	return entry.Desc or ""
+end
+
+local C = {
+	Panel = Color3.fromRGB(25, 16, 10),
+	Gold = Color3.fromRGB(255, 181, 48),
+	Text = Color3.fromRGB(239, 222, 190),
+	Muted = Color3.fromRGB(177, 150, 112),
+	Dim = Color3.fromRGB(125, 103, 77),
+	Btn = Color3.fromRGB(42, 27, 16),
+	BtnPrimary = Color3.fromRGB(93, 48, 14),
+	BtnHover = Color3.fromRGB(76, 48, 25),
+	BtnSelected = Color3.fromRGB(120, 66, 22),
+	BtnPressed = Color3.fromRGB(150, 85, 28),
+	StrokeIdle = Color3.fromRGB(145, 78, 18),
+	StrokeHover = Color3.fromRGB(205, 135, 50),
+	Warning = Color3.fromRGB(255, 110, 90),
+}
+
+local creationFrame = Instance.new("Frame")
+creationFrame.Name = "CharacterCreation"
+creationFrame.Size = UDim2.new(1, 0, 1, 0)
+creationFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+creationFrame.BackgroundTransparency = 0.18
+creationFrame.Visible = false
+creationFrame.Parent = screenGui
+
+local creatorPanel = Instance.new("Frame")
+creatorPanel.Name = "CreatorPanel"
+creatorPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+creatorPanel.Position = UDim2.fromScale(0.5, 0.5)
+creatorPanel.Size = UDim2.new(0.5, 0, 0.9, 0)
+creatorPanel.BackgroundColor3 = C.Panel
+creatorPanel.BorderSizePixel = 0
+creatorPanel.Parent = creationFrame
+Instance.new("UICorner", creatorPanel).CornerRadius = UDim.new(0, 8)
+local creatorStroke = Instance.new("UIStroke", creatorPanel)
+creatorStroke.Color = C.Gold
+creatorStroke.Thickness = 2
+
+local creatorScroll = Instance.new("ScrollingFrame")
+creatorScroll.Name = "CreatorContent"
+creatorScroll.Position = UDim2.new(0, 14, 0, 12)
+creatorScroll.Size = UDim2.new(1, -28, 1, -24)
+creatorScroll.BackgroundTransparency = 1
+creatorScroll.BorderSizePixel = 0
+creatorScroll.ScrollBarThickness = 5
+creatorScroll.ScrollBarImageColor3 = Color3.fromRGB(190, 112, 28)
+creatorScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+creatorScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+creatorScroll.Parent = creatorPanel
+
+local creatorList = Instance.new("UIListLayout")
+creatorList.Padding = UDim.new(0, 8)
+creatorList.SortOrder = Enum.SortOrder.LayoutOrder
+creatorList.Parent = creatorScroll
+local creatorPadding = Instance.new("UIPadding")
+creatorPadding.PaddingLeft = UDim.new(0, 10)
+creatorPadding.PaddingRight = UDim.new(0, 10)
+creatorPadding.PaddingBottom = UDim.new(0, 10)
+creatorPadding.Parent = creatorScroll
+
+local orderCounter = 0
+local function nextOrder()
+	orderCounter += 1
+	return orderCounter
+end
+
+local function creatorLabel(parent, text, height, fontSize, color)
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.new(1, 0, 0, height or 26)
+	label.Text = text or ""
+	label.TextColor3 = color or C.Text
+	label.TextSize = fontSize or 18
+	label.Font = MEDIEVAL_FONT_RU
+	label.TextWrapped = true
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextYAlignment = Enum.TextYAlignment.Center
+	label.Parent = parent
+	return label
+end
+
+local function creatorButton(parent, text, size, primary)
+	local button = Instance.new("TextButton")
+	button.Size = size
+	button.BorderSizePixel = 0
+	button.Text = text
+	button.TextColor3 = C.Text
+	button.TextSize = 19
+	button.Font = MEDIEVAL_FONT_RU
+	button.AutoButtonColor = false
+	button.Parent = parent
+	Instance.new("UICorner", button).CornerRadius = UDim.new(0, 6)
+	local stroke = Instance.new("UIStroke", button)
+	stroke.Thickness = 1
+
+	local hovered, pressed = false, false
+
+	local function applyState()
+		local selected = button:GetAttribute("Selected") == true
+		local bg, strokeColor, thickness
+		if pressed then
+			bg, strokeColor, thickness = C.BtnPressed, C.Gold, 2
+		elseif selected then
+			bg, strokeColor, thickness = C.BtnSelected, C.Gold, 2
+		elseif hovered then
+			bg, strokeColor, thickness = C.BtnHover, C.StrokeHover, 1.5
+		else
+			bg = primary and C.BtnPrimary or C.Btn
+			strokeColor, thickness = C.StrokeIdle, 1
+		end
+		TweenService:Create(button, TweenInfo.new(0.12), {BackgroundColor3 = bg}):Play()
+		stroke.Color = strokeColor
+		stroke.Thickness = thickness
+	end
+
+	button.MouseEnter:Connect(function() hovered = true; applyState() end)
+	button.MouseLeave:Connect(function() hovered = false; pressed = false; applyState() end)
+	button.MouseButton1Down:Connect(function() pressed = true; applyState() end)
+	button.MouseButton1Up:Connect(function() pressed = false; applyState() end)
+	button:GetAttributeChangedSignal("Selected"):Connect(applyState)
+	applyState()
+
+	return button
+end
+
+local creatorTitle = creatorLabel(creatorScroll, "ДО РОЖДЕНИЯ", 43, 30, Color3.fromRGB(255, 184, 55))
+creatorTitle.TextXAlignment = Enum.TextXAlignment.Center
+creatorTitle.LayoutOrder = nextOrder()
+local creatorSubtitle = creatorLabel(creatorScroll, "Выберите, как будет выглядеть ваш персонаж. Его семья, место рождения и судьба определятся при рождении.", 40, 16, C.Muted)
+creatorSubtitle.TextXAlignment = Enum.TextXAlignment.Center
+creatorSubtitle.LayoutOrder = nextOrder()
+
+local resolved = {gender = "Женский", firstName = nil, lastPair = nil, indices = {}}
+
+local function pickRandomProfession()
+	local p = {
+		{Name = "Кузнец", Wealth = 3}, {Name = "Плотник", Wealth = 2}, {Name = "Ткач", Wealth = 2},
+		{Name = "Ювелир", Wealth = 4}, {Name = "Строитель", Wealth = 2}, {Name = "Портной", Wealth = 2},
+		{Name = "Охотник", Wealth = 2}, {Name = "Настоятель", Wealth = 3}, {Name = "Палач", Wealth = 2},
+		{Name = "Разбойник", Wealth = 1}, {Name = "Мелкий разбойник", Wealth = 1}, {Name = "Купец", Wealth = 4},
+		{Name = "Паладин", Wealth = 4}, {Name = "Архиепископ", Wealth = 5}, {Name = "Мечник на службе", Wealth = 3},
+		{Name = "Мечник со своими владениями", Wealth = 5}, {Name = "Бард", Wealth = 2}, {Name = "Фермер", Wealth = 1},
+		{Name = "Пекарь", Wealth = 2}, {Name = "Учёный", Wealth = 3}, {Name = "Маг на службе", Wealth = 3},
+		{Name = "Маг со своими владениями", Wealth = 5}, {Name = "Лекарь", Wealth = 3}, {Name = "Придворный лекарь", Wealth = 4},
+		{Name = "Служанка", Wealth = 1}, {Name = "Дворецкий", Wealth = 3}, {Name = "Ассасин", Wealth = 3},
+		{Name = "Призыватель духов, владеющий луком", Wealth = 3}, {Name = "Король", Wealth = 6},
+		{Name = "Дворянин", Wealth = 5}, {Name = "Подавальщик", Wealth = 1}, {Name = "Подавальщица", Wealth = 1},
+		{Name = "Искатель приключений", Wealth = 2}, {Name = "Бывший искатель приключений", Wealth = 2}
+	}
+	return p[math.random(1, #p)]
+end
+
+local function generateProfessionData()
+	if math.random(1, 100) <= 10 then
+		return "Безработный", 0
+	end
+	local p1 = pickRandomProfession()
+	local p2 = nil
+	if math.random(1, 100) <= 25 then
+		p2 = pickRandomProfession()
+	end
+
+	if p2 then
+		if (p1.Name == "Мелкий разбойник" and p2.Name == "Король") or (p2.Name == "Мелкий разбойник" and p1.Name == "Король") then
+			return "Бывший мелкий разбойник, ставший королём", 6
+		end
+		local maxW = math.max(p1.Wealth, p2.Wealth)
+		return p1.Name .. " и " .. p2.Name, maxW
+	else
+		return p1.Name, p1.Wealth
+	end
+end
+
+local function rollRandomParts()
+	resolved.gender = creationData.gender
+	resolved.firstName = pick(FirstNames[resolved.gender])
+	resolved.lastPair = pick(LastNames)
+	resolved.place = pick(Places)
+
+	local diff = creationData.difficulty
+	local orphanChance = 2
+	local singleParentChance = 5
+
+	if diff == 2 then orphanChance = 1; singleParentChance = 2
+	elseif diff == 3 then orphanChance = 5; singleParentChance = 10
+	elseif diff == 4 then orphanChance = 15; singleParentChance = 20
+	elseif diff == 5 then orphanChance = 25; singleParentChance = 25
+	elseif diff == 6 then orphanChance = 50; singleParentChance = 30
+	end
+
+	local roll = math.random(1, 100)
+	local fWealth, mWealth = 0, 0
+
+	if roll <= orphanChance then
+		resolved.familyStatus = "Сирота"
+		resolved.fatherFirstName, resolved.motherFirstName = nil, nil
+		resolved.fatherProf, resolved.motherProf = "Неизвестно", "Неизвестно"
+		resolved.upbringing = "Воспитывался(ась) в приюте / на улице"
+	elseif roll <= orphanChance + singleParentChance then
+		if math.random(1, 2) == 1 then
+			resolved.familyStatus = "Неполная (только отец)"
+			resolved.fatherFirstName = pick(FirstNames["Мужской"])
+			resolved.motherFirstName = nil
+			resolved.fatherProf, fWealth = generateProfessionData()
+			resolved.motherProf = "Неизвестно"
+			resolved.upbringing = "Воспитывал отец"
+		else
+			resolved.familyStatus = "Неполная (только мать)"
+			resolved.fatherFirstName = nil
+			resolved.motherFirstName = pick(FirstNames["Женский"])
+			resolved.fatherProf = "Неизвестно"
+			resolved.motherProf, mWealth = generateProfessionData()
+			resolved.upbringing = "Воспитывала мать"
+		end
+	else
+		resolved.familyStatus = "Полная семья"
+		resolved.fatherFirstName = pick(FirstNames["Мужской"])
+		resolved.motherFirstName = pick(FirstNames["Женский"])
+		resolved.fatherProf, fWealth = generateProfessionData()
+		resolved.motherProf, mWealth = generateProfessionData()
+		resolved.upbringing = "Воспитывали оба родителя"
+	end
+
+	local avgWealth = 0
+	if resolved.fatherFirstName and resolved.motherFirstName then
+		avgWealth = math.floor((fWealth + mWealth) / 2)
+	elseif resolved.fatherFirstName then
+		avgWealth = fWealth
+	elseif resolved.motherFirstName then
+		avgWealth = mWealth
+	else
+		avgWealth = 1
+	end
+
+	local wealthLabels = {"Нищета", "Бедность", "Средний достаток", "Зажиточность", "Богатство", "Королевская роскошь"}
+	resolved.familyWealth = wealthLabels[math.clamp(avgWealth, 1, 6)]
+	resolved.isNobleFamily = (avgWealth >= 4) or (math.random(1, 100) <= 10)
+
+	for key, items in pairs(Lists) do
+		resolved.indices[key] = pick(openIndices(items))
+	end
+end
+
+local function makeInputRow(caption, placeholder)
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.new(1, 0, 0, 42)
+	row.LayoutOrder = nextOrder()
+	row.Parent = creatorScroll
+
+	local cap = creatorLabel(row, caption, 40, 19)
+	cap.Size = UDim2.new(0.25, 0, 1, 0)
+
+	local input = Instance.new("TextBox")
+	input.Position = UDim2.new(0.26, 0, 0, 0)
+	input.Size = UDim2.new(0.74, 0, 1, 0)
+	input.BackgroundColor3 = Color3.fromRGB(13, 9, 6)
+	input.BorderSizePixel = 0
+	input.PlaceholderText = placeholder
+	input.PlaceholderColor3 = C.Dim
+	input.Text = ""
+	input.TextColor3 = C.Text
+	input.TextSize = 19
+	input.Font = MEDIEVAL_FONT_RU
+	input.ClearTextOnFocus = false
+	input.TextXAlignment = Enum.TextXAlignment.Left
+	input.Parent = row
+	Instance.new("UICorner", input).CornerRadius = UDim.new(0, 6)
+	local pad = Instance.new("UIPadding", input)
+	pad.PaddingLeft = UDim.new(0, 10)
+	local st = Instance.new("UIStroke", input)
+	st.Color = C.StrokeIdle
+	st.Thickness = 1
+
+	input:GetPropertyChangedSignal("Text"):Connect(function()
+		local len = utf8.len(input.Text)
+		if len and len > NAME_MAX then
+			local cut = utf8.offset(input.Text, NAME_MAX + 1)
+			if cut then
+				input.Text = input.Text:sub(1, cut - 1)
+			end
+		end
+	end)
+
+	return input
+end
+
+local firstNameInput = makeInputRow("Имя", "Оставьте пустым для случайного имени")
+local lastNameInput = makeInputRow("Фамилия", "Оставьте пустым для случайной фамилии")
+
+local choiceRows = {}
+local creatorWarning
+
+local genderRow = Instance.new("Frame")
+genderRow.BackgroundTransparency = 1
+genderRow.Size = UDim2.new(1, 0, 0, 42)
+genderRow.LayoutOrder = nextOrder()
+genderRow.Parent = creatorScroll
+creatorLabel(genderRow, "Пол", 40, 19).Size = UDim2.new(0.25, 0, 1, 0)
+local maleButton = creatorButton(genderRow, "♂ Мужской", UDim2.new(0.36, 0, 0, 38), false)
+maleButton.Position = UDim2.new(0.26, 0, 0, 0)
+local femaleButton = creatorButton(genderRow, "♀ Женский", UDim2.new(0.36, 0, 0, 38), false)
+femaleButton.Position = UDim2.new(0.64, 0, 0, 0)
+
+local function setGender(value)
+	creationData.gender = value
+	maleButton:SetAttribute("Selected", value == "Мужской")
+	femaleButton:SetAttribute("Selected", value == "Женский")
+	for _, row in pairs(choiceRows) do
+		row.Refresh()
+	end
+end
+
+maleButton.MouseButton1Click:Connect(function()
+	playClick()
+	setGender("Мужской")
+end)
+femaleButton.MouseButton1Click:Connect(function()
+	playClick()
+	setGender("Женский")
+end)
+
+local function addChoiceRow(caption, key, items, withDescription)
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.new(1, 0, 0, 42)
+	row.AutomaticSize = Enum.AutomaticSize.Y
+	row.LayoutOrder = nextOrder()
+	row.Parent = creatorScroll
+
+	creatorLabel(row, caption, 38, 19).Size = UDim2.new(0.25, 0, 0, 38)
+	local left = creatorButton(row, "◀", UDim2.new(0.09, 0, 0, 38), false)
+	left.Position = UDim2.new(0.26, 0, 0, 0)
+	local value = creatorButton(row, "", UDim2.new(0.54, 0, 0, 38), false)
+	value.Position = UDim2.new(0.36, 0, 0, 0)
+	local right = creatorButton(row, "▶", UDim2.new(0.09, 0, 0, 38), false)
+	right.Position = UDim2.new(0.91, 0, 0, 0)
+
+	local description
+	if withDescription then
+		description = creatorLabel(row, "", 20, 16, C.Muted)
+		description.Position = UDim2.new(0.26, 0, 0, 42)
+		description.Size = UDim2.new(0.74, 0, 0, 20)
+		description.AutomaticSize = Enum.AutomaticSize.Y
+		description.TextYAlignment = Enum.TextYAlignment.Top
+	end
+
+	local function refresh()
+		local item = items[creationData[key]]
+		local text = entryName(item)
+		if item.Locked then
+			text = text .. " (закрыто)"
+		end
+		value.Text = text
+		value.TextColor3 = item.Locked and C.Dim or C.Text
+		if description then
+			description.Text = entryDesc(item)
+		end
+	end
+
+	local function set(newIndex)
+		creationData[key] = newIndex
+		if creatorWarning then
+			creatorWarning.Text = ""
+		end
+		refresh()
+	end
+
+	local function step(delta)
+		set(((creationData[key] - 1 + delta) % #items) + 1)
+	end
+
+	left.MouseButton1Click:Connect(function() playClick(); step(-1) end)
+	right.MouseButton1Click:Connect(function() playClick(); step(1) end)
+	value.MouseButton1Click:Connect(function() playClick(); step(1) end)
+
+	choiceRows[key] = {Set = set, Refresh = refresh, Count = #items}
+	refresh()
+end
+
+addChoiceRow("Сценарий", "scenario", Scenarios, true)
+addChoiceRow("Сложность", "difficulty", Difficulties, true)
+addChoiceRow("Раса", "race", Races, true)
+addChoiceRow("Волосы", "hair", Hair, false)
+addChoiceRow("Глаза", "eyes", Eyes, false)
+addChoiceRow("Кожа", "skin", Skin, false)
+addChoiceRow("Рост", "height", Height, false)
+
+setGender(creationData.gender)
+
+creatorWarning = creatorLabel(creatorScroll, "", 24, 17, C.Warning)
+creatorWarning.TextXAlignment = Enum.TextXAlignment.Center
+creatorWarning.LayoutOrder = nextOrder()
+
+local birthButton = creatorButton(creatorScroll, "РОДИТЬСЯ", UDim2.new(1, 0, 0, 46), true)
+birthButton.TextSize = 23
+birthButton.LayoutOrder = nextOrder()
+local randomCharacterButton = creatorButton(creatorScroll, "Случайный персонаж", UDim2.new(1, 0, 0, 46), true)
+randomCharacterButton.TextSize = 21
+randomCharacterButton.LayoutOrder = nextOrder()
+local creatorBackButton = creatorButton(creatorScroll, "Назад", UDim2.new(1, 0, 0, 42), false)
+creatorBackButton.LayoutOrder = nextOrder()
+
+-- ---------- ОКНО «НОВОРОЖДЁННЫЙ» ----------
+
+local newbornFrame = Instance.new("Frame")
+newbornFrame.Name = "NewbornFrame"
+newbornFrame.Size = UDim2.new(1, 0, 1, 0)
+newbornFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+newbornFrame.BackgroundTransparency = 0.18
+newbornFrame.Visible = false
+newbornFrame.Parent = screenGui
+
+local newbornPanel = Instance.new("Frame")
+newbornPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+newbornPanel.Position = UDim2.fromScale(0.5, 0.5)
+newbornPanel.Size = UDim2.new(0.5, 0, 0.9, 0)
+newbornPanel.BackgroundColor3 = C.Panel
+newbornPanel.BorderSizePixel = 0
+newbornPanel.Parent = newbornFrame
+Instance.new("UICorner", newbornPanel).CornerRadius = UDim.new(0, 8)
+local newbornStroke = Instance.new("UIStroke", newbornPanel)
+newbornStroke.Color = C.Gold
+newbornStroke.Thickness = 2
+
+local newbornScroll = Instance.new("ScrollingFrame")
+newbornScroll.Position = UDim2.new(0, 14, 0, 12)
+newbornScroll.Size = UDim2.new(1, -28, 1, -24)
+newbornScroll.BackgroundTransparency = 1
+newbornScroll.BorderSizePixel = 0
+newbornScroll.ScrollBarThickness = 5
+newbornScroll.ScrollBarImageColor3 = Color3.fromRGB(190, 112, 28)
+newbornScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+newbornScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+newbornScroll.Parent = newbornPanel
+local newbornList = Instance.new("UIListLayout")
+newbornList.Padding = UDim.new(0, 8)
+newbornList.SortOrder = Enum.SortOrder.LayoutOrder
+newbornList.Parent = newbornScroll
+local newbornPadding = Instance.new("UIPadding")
+newbornPadding.PaddingLeft = UDim.new(0, 10)
+newbornPadding.PaddingRight = UDim.new(0, 10)
+newbornPadding.PaddingBottom = UDim.new(0, 10)
+newbornPadding.Parent = newbornScroll
+
+local newbornTitle = creatorLabel(newbornScroll, "НОВОРОЖДЁННЫЙ", 48, 30, Color3.fromRGB(255, 184, 55))
+newbornTitle.TextXAlignment = Enum.TextXAlignment.Center
+newbornTitle.LayoutOrder = nextOrder()
+local newbornInfo = creatorLabel(newbornScroll, "", 0, 18, Color3.fromRGB(220, 197, 162))
+newbornInfo.Size = UDim2.new(1, 0, 0, 0)
+newbornInfo.AutomaticSize = Enum.AutomaticSize.Y
+newbornInfo.TextYAlignment = Enum.TextYAlignment.Top
+newbornInfo.LayoutOrder = nextOrder()
+
+local beginLifeButton = creatorButton(newbornScroll, "НАЧАТЬ ЖИЗНЬ", UDim2.new(1, 0, 0, 48), true)
+beginLifeButton.TextSize = 23
+beginLifeButton.LayoutOrder = nextOrder()
+local rerollLifeButton = creatorButton(newbornScroll, "Перебросить жизнь (1 попытка)", UDim2.new(1, 0, 0, 44), false)
+rerollLifeButton.LayoutOrder = nextOrder()
+local newbornBackButton = creatorButton(newbornScroll, "Назад", UDim2.new(1, 0, 0, 42), false)
+newbornBackButton.LayoutOrder = nextOrder()
+
+-- ---------- СБОРКА ПЕРСОНАЖА ----------
+
+local currentPreview = nil
+
+local function getCreationResult()
+	local first = trim(firstNameInput.Text)
+	if first == "" then
+		first = resolved.firstName
+	end
+	local gender = resolved.gender
+
+	local userSurname = trim(lastNameInput.Text)
+	local fatherSurname = ""
+	local motherSurname = ""
+	local childSurname = ""
+
+	if userSurname ~= "" then
+		fatherSurname = " " .. userSurname
+		motherSurname = " " .. userSurname
+		childSurname = userSurname
+	else
+		if resolved.isNobleFamily then
+			local randomNoble = resolved.lastPair
+			fatherSurname = " " .. randomNoble
+			motherSurname = " " .. randomNoble
+			childSurname = randomNoble
+		else
+			childSurname = resolved.lastPair
+		end
+	end
+
+	local fName = ""
+	local mName = ""
+
+	if resolved.fatherFirstName then
+		fName = resolved.fatherFirstName .. fatherSurname .. " (" .. resolved.fatherProf .. ")"
+	else
+		fName = "Неизвестен / Погиб"
+	end
+
+	if resolved.motherFirstName then
+		mName = resolved.motherFirstName .. motherSurname .. " (" .. resolved.motherProf .. ")"
+	else
+		mName = "Неизвестна / Погибла"
+	end
+
+	local idx = {}
+	for key, items in pairs(Lists) do
+		if items[creationData[key]].Random then
+			idx[key] = resolved.indices[key]
+		else
+			idx[key] = creationData[key]
+		end
+	end
+	local race = Races[idx.race]
+	local scenario = Scenarios[idx.scenario]
+
+	return {
+		FirstName = first,
+		LastName = childSurname,
+		Gender = gender,
+		Race = race.Name,
+		RaceDesc = race.Desc or "",
+		Scenario = entryName(scenario, gender),
+		ScenarioDesc = entryDesc(scenario, gender),
+		Difficulty = Difficulties[idx.difficulty].Name,
+		Hair = ruLower(Hair[idx.hair].Name),
+		Eyes = ruLower(Eyes[idx.eyes].Name),
+		Skin = ruLower(Skin[idx.skin].Name),
+		Height = ruLower(Height[idx.height].Name),
+		PlaceName = resolved.place.Name,
+		PlaceDesc = resolved.place.Desc,
+		FamilyStatus = resolved.familyStatus,
+		FatherName = fName,
+		MotherName = mName,
+		Upbringing = resolved.upbringing,
+		FamilyWealth = resolved.familyWealth,
+	}
+end
+
+local rerollsRemaining = 1
+local rerollAllowed = true
+
+local function updateRerollButton()
+	rerollLifeButton.Visible = rerollAllowed
+	if rerollsRemaining > 0 then
+		rerollLifeButton.Text = "Перебросить жизнь (1 попытка)"
+		rerollLifeButton.TextTransparency = 0
+	else
+		rerollLifeButton.Text = "Попытка использована"
+		rerollLifeButton.TextTransparency = 0.5
+	end
+end
+
+local function refreshNewborn()
+	local d = getCreationResult()
+	currentPreview = d
+	newbornTitle.Text = (d.Gender == "Женский") and "НОВОРОЖДЁННАЯ" or "НОВОРОЖДЁННЫЙ"
+	local raceLine = "Раса: " .. d.Race
+	if d.RaceDesc ~= "" then raceLine = raceLine .. "\n" .. d.RaceDesc end
+	local scenarioLine = "Сценарий: " .. d.Scenario
+	if d.ScenarioDesc ~= "" then scenarioLine = scenarioLine .. "\n" .. d.ScenarioDesc end
+
+	local displaySurname = (d.LastName ~= "") and (" " .. d.LastName) or ""
+
+	newbornInfo.Text = string.format(
+		"Имя: %s%s\n%s\nПол: %s\n\n" ..
+			"Место рождения: %s\nОписание места: %s\n\n" ..
+			"Семья (%s):\nОтец: %s\nМать: %s\n\n" ..
+			"Воспитание: %s\n\n" ..
+			"Богатство семьи: %s\nЗдоровье: Не задано\nПотенциал Боевой Ауры: Не задано\n\n" ..
+			"Внешность: %s волосы, %s глаза, %s кожа, %s рост\n\n" ..
+			"Стихийная предрасположенность: Не задано\nОбщая черта: Не задано\n\n" ..
+			"НЕИЗВЕСТНЫЕ ТАЛАНТЫ\nНе задано\nНе задано\nНе задано\n\n" ..
+			"ХАРАКТЕРИСТИКИ\nСила: Не задано     Ловкость: Не задано\n" ..
+			"Интеллект: Не задано     Живучесть: Не задано\n" ..
+			"Мана: Не задано     Удача: Не задано\nХаризма: Не задано\n\n" ..
+			"%s\nСложность: %s\n\n" ..
+			"Наследие — валюта, получаемая после смерти персонажа или перехода в тело наследника.",
+		d.FirstName, displaySurname, raceLine, d.Gender,
+		d.PlaceName, d.PlaceDesc,
+		d.FamilyStatus, d.FatherName, d.MotherName,
+		d.Upbringing, d.FamilyWealth,
+		d.Hair, d.Eyes, d.Skin, d.Height,
+		scenarioLine, d.Difficulty
+	)
+end
+
+birthButton.MouseButton1Click:Connect(function()
+	playClick()
+	local selectedRace = Races[creationData.race]
+	if selectedRace.Locked then
+		creatorWarning.Text = "Раса «" .. selectedRace.Name .. "» пока закрыта. Выберите другую."
+		return
+	end
+	creatorWarning.Text = ""
+	rollRandomParts()
+	rerollsRemaining = 1
+	rerollAllowed = true
+	updateRerollButton()
+	refreshNewborn()
+	showScreen(newbornFrame)
+end)
+
+local function randomizeChoices()
+	setGender(pick({"Мужской", "Женский"}))
+	for key, items in pairs(Lists) do
+		choiceRows[key].Set(pick(openIndices(items)))
+	end
+end
+
+local function generateFullyRandom()
+	randomizeChoices()
+	firstNameInput.Text = ""
+	lastNameInput.Text = ""
+	creatorWarning.Text = ""
+	rollRandomParts()
+	rerollsRemaining = 0
+	rerollAllowed = false
+	updateRerollButton()
+	refreshNewborn()
+	showScreen(newbornFrame)
+end
+
+randomCharacterButton.MouseButton1Click:Connect(function()
+	playClick()
+	generateFullyRandom()
+end)
+
+creatorBackButton.MouseButton1Click:Connect(function()
+	playClick()
+	showScreen(mainMenu)
+end)
+
+newbornBackButton.MouseButton1Click:Connect(function()
+	playClick()
+	showScreen(creationFrame)
+end)
+
+rerollLifeButton.MouseButton1Click:Connect(function()
+	if rerollsRemaining <= 0 then return end
+	playClick()
+	rerollsRemaining -= 1
+	for key, items in pairs(Lists) do
+		choiceRows[key].Set(pick(openIndices(items)))
+	end
+	rollRandomParts()
+	updateRerollButton()
+	refreshNewborn()
+	newbornScroll.CanvasPosition = Vector2.new(0, 0)
+end)
+
+-- =========================================
+-- ПЕРЕХОДЫ И ЛОГИКА
+-- =========================================
+
+local currentAge = 0
+
+local function refreshMainMenu()
+	if currentCharacter then
+		menuSingleDesc.Text = "Продолжить за " .. currentCharacter.FirstName .. " " .. currentCharacter.LastName .. ", возраст " .. currentAge
+	else
+		menuSingleDesc.Text = "Создай персонажа и проживи свою жизнь."
+	end
+end
+
+function showScreen(screen)
+	titleScreen.Visible = false
+	mainMenu.Visible = false
+	updateLogFrame.Visible = false
+	feedbackFrame.Visible = false
+	gameScreen.Visible = false
+	deathFrame.Visible = false
+	settingsFrame.Visible = false
+	creationFrame.Visible = false
+	newbornFrame.Visible = false
+
+	screen.Visible = true
+	if screen == mainMenu then
+		refreshMainMenu()
+	end
+end
+
+function showDeathScreen(reason)
+	showScreen(deathFrame)
+	deathReason.Text = reason or "Конец жизни"
+end
+
+function updateUI(life)
+	if not life then return end
+	ageLabel.Text = "ВОЗРАСТ " .. life.Age
+	currentAge = life.Age
+	goldHeaderLabel.Text = "Золото: " .. life.Gold
+
+	local d = currentCharacter
+	if d then
+		subLabel.Text = d.Race .. "  ·  " .. d.Gender .. "  ·  Возраст " .. life.Age
+	else
+		subLabel.Text = "Возраст " .. life.Age
+	end
+
+	local function setBar(valueLabel, fill, value, inverted)
+		local v = math.clamp(value, 0, 100)
+		local ratio = v / 100
+		local good = inverted and (1 - ratio) or ratio
+		local barColor = GC.Green
+		if good < 0.3 then
+			barColor = GC.Red
+		elseif good < 0.6 then
+			barColor = GC.Gold
+		end
+		valueLabel.Text = tostring(v) .. " / 100"
+		valueLabel.TextColor3 = barColor
+		TweenService:Create(fill, TweenInfo.new(0.25), {
+			Size = UDim2.new(ratio, 0, 1, 0),
+			BackgroundColor3 = barColor,
+		}):Play()
+	end
+	setBar(healthValueLabel, healthFill, life.Health, false)
+	setBar(happyValueLabel, happyFill, life.Happiness or 50, false)
+	setBar(stressValueLabel, stressFill, life.Stress or 0, true)
+
+	charStatLabels.Strength.Text = tostring(life.Strength)
+	charStatLabels.Magic.Text = tostring(life.Magic)
+	charStatLabels.Gold.Text = tostring(life.Gold)
+end
+
+local function updateCharacterInfo()
+	local d = currentCharacter
+	if not d then
+		nameLabel.Text = "Персонаж"
+		subLabel.Text = ""
+		difficultyLabel.Text = ""
+		charInfoLabel.Text = "Персонаж ещё не создан."
+		return
+	end
+	local displaySurname = (d.LastName ~= "") and (" " .. d.LastName) or ""
+	nameLabel.Text = d.FirstName .. displaySurname
+	difficultyLabel.Text = "Сложность: " .. d.Difficulty
+
+	charInfoLabel.Text = string.format(
+		"Раса: %s\nПол: %s\nСценарий: %s\n\n" ..
+			"Внешность:\n• %s волосы\n• %s глаза\n• %s кожа\n• %s рост\n\n" ..
+			"Место рождения: %s\nСемья: %s\nОтец: %s\nМать: %s\nБогатство семьи: %s",
+		d.Race, d.Gender, d.Scenario,
+		d.Hair, d.Eyes, d.Skin, d.Height,
+		d.PlaceName, d.FamilyStatus, d.FatherName, d.MotherName, d.FamilyWealth
+	)
+end
+
+beginLifeButton.MouseButton1Click:Connect(function()
+	playClick()
+	local ok, life = pcall(function()
+		return GetLife:InvokeServer()
+	end)
+	if ok and life then
+		currentCharacter = currentPreview
+		updateCharacterInfo()
+		updateUI(life)
+		selectTab("Жизнь")
+		showScreen(gameScreen)
+		fitGameScreen()
+	else
+		beginLifeButton.Text = "ОШИБКА ЗАГРУЗКИ ЖИЗНИ"
+		task.delay(2.5, function()
+			beginLifeButton.Text = "НАЧАТЬ ЖИЗНЬ"
+		end)
+	end
+end)
+
+local transitioning = false
+
+local function showTitleScreen()
+	transitioning = false
+	titleGroup.GroupTransparency = 0
+	showScreen(titleScreen)
+end
+
+local function transitionToMenu()
+	if transitioning then return end
+	transitioning = true
+	playClick()
+	local fade = TweenService:Create(titleGroup, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+		GroupTransparency = 1
+	})
+	fade:Play()
+	fade.Completed:Wait()
+	menuPanel.GroupTransparency = 1
+	showScreen(mainMenu)
+	TweenService:Create(menuPanel, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		GroupTransparency = 0
+	}):Play()
+end
+
+startButton.MouseButton1Click:Connect(transitionToMenu)
+
+closeMenuBtn.MouseButton1Click:Connect(function()
+	playClick()
+	showTitleScreen()
+end)
+
+singleplayerBtn.MouseButton1Click:Connect(function()
+	playClick()
+	local life = GetLife:InvokeServer()
+	if life and not life.IsAlive then
+		updateUI(life)
+		showDeathScreen(life.DeathReason)
+	elseif currentCharacter then
+		updateUI(life)
+		showScreen(gameScreen)
+	else
+		showScreen(creationFrame)
+	end
+end)
+
+multiplayerBtn.MouseButton1Click:Connect(function()
+	playClick()
+	menuMultiDesc.Text = "Скоро! Этот режим ещё в разработке."
+	task.delay(2, function()
+		menuMultiDesc.Text = menuMultiDesc:GetAttribute("Default")
+	end)
+end)
+
+reincarnateBtn.MouseButton1Click:Connect(function()
+	playClick()
+	Reincarnate:InvokeServer()
+	currentCharacter = nil
+	currentPreview = nil
+	updateCharacterInfo()
+	showScreen(creationFrame)
+end)
+
+deathRandomBtn.MouseButton1Click:Connect(function()
+	playClick()
+	Reincarnate:InvokeServer()
+	currentCharacter = nil
+	currentPreview = nil
+	updateCharacterInfo()
+	generateFullyRandom()
+end)
+
+deathToMenuBtn.MouseButton1Click:Connect(function()
+	playClick()
+	showScreen(mainMenu)
+end)
+
+print("[Dragon's Maw Adventure] Клиент загружен")
